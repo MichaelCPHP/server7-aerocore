@@ -290,12 +290,38 @@
 
   #data-body { flex: 1; display: flex; overflow: hidden; }
 
-  /* File tree */
-  #file-tree {
+  /* File tree — now a flex column with split pane */
+  #file-tree-wrap {
     width: 260px; min-width: 260px; border-right: 1px solid var(--border);
-    overflow-y: auto; padding: 8px 0; background: var(--surface); font-size: 11px;
+    background: var(--surface); font-size: 11px;
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  #file-tree.hidden { display: none; }
+  #file-tree-wrap.hidden { display: none; }
+  #file-tree {
+    flex: 1 1 60%; overflow-y: auto; padding: 8px 0; min-height: 80px;
+  }
+  .ft-gutter { height: 5px; min-height: 5px; cursor: row-resize; background: var(--border); transition: background 0.15s; flex-shrink: 0; }
+  .ft-gutter:hover { background: var(--gold-dim); }
+  #system-browser {
+    flex: 0 0 40%; display: flex; flex-direction: column; min-height: 100px; overflow: hidden;
+  }
+  .sb-browser-header {
+    display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-top: 1px solid var(--border);
+    font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);
+    flex-shrink: 0; background: var(--bg);
+  }
+  .sb-browser-header .sb-path-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .sb-browser-header button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 3px; }
+  .sb-browser-header button:hover { color: var(--gold); background: var(--surface-hover); }
+  #system-browser-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .sys-item {
+    padding: 3px 12px; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; gap: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px;
+  }
+  .sys-item:hover { background: var(--surface-hover); color: var(--text); }
+  .sys-item.active { color: var(--gold); background: var(--sel-bg); }
+  .sys-item .sys-icon { font-size: 10px; opacity: 0.6; flex-shrink: 0; }
+  .sys-item .sys-size { margin-left: auto; font-size: 9px; color: var(--text-muted); font-family: var(--mono); }
   .tree-group { margin-bottom: 4px; }
   .tree-group summary {
     padding: 4px 12px; cursor: pointer; color: var(--text-dim); font-weight: 600;
@@ -313,6 +339,7 @@
   .tree-file.active { color: var(--gold); background: var(--sel-bg); }
   .tree-icon { font-size: 10px; opacity: 0.6; }
   .tree-subdir { padding: 3px 12px 3px 24px; font-size: 10px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 4px; }
+  .tree-group summary.folder-selected { color: var(--gold); background: var(--sel-bg); }
 
   /* Viewer area */
   #viewer { flex: 1; overflow: auto; position: relative; }
@@ -706,7 +733,19 @@
         </span>
       </div>
       <div id="data-body">
-        <div id="file-tree"></div>
+        <div id="file-tree-wrap">
+          <div id="file-tree"></div>
+          <div class="ft-gutter" id="ft-gutter"></div>
+          <div id="system-browser">
+            <div class="sb-browser-header">
+              <span>System</span>
+              <span class="sb-path-label" id="sys-path-label" title="/">/</span>
+              <button onclick="sysBrowseUp()" title="Go up">&#8593;</button>
+              <button onclick="sysBrowse('/')" title="Go to root">&#8962;</button>
+            </div>
+            <div id="system-browser-list"></div>
+          </div>
+        </div>
         <div id="viewer">
           <div class="viewer-empty">Open a file from the tree to view data</div>
         </div>
@@ -718,6 +757,7 @@
         </div>
         <div id="database-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
           <div class="ss-toolbar">
+            <button class="ss-btn" onclick="ssCreateDb()">+ Database</button>
             <button class="ss-btn" onclick="ssImportXlsx()">Import XLSX</button>
             <button class="ss-btn" onclick="ssNewSheet()">+ New Sheet</button>
             <button class="ss-btn" onclick="ssAddRow()" id="ss-add-row-btn" style="display:none">+ Row</button>
@@ -774,21 +814,38 @@
 <!-- Export Transcript Modal -->
 <div id="export-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeExportModal()">
   <div class="modal">
-    <h3>Export Session</h3>
-    <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Session ID: <code id="export-session-id" style="font-size:10px"></code></p>
-    <div style="display:flex;gap:8px;flex-direction:column">
-      <button class="btn-export" onclick="doExport('markdown')" style="text-align:left;padding:12px">
-        <strong>Markdown</strong><br><span style="font-size:11px;color:var(--text-dim)">Download full conversation as .md file with reasoning, tool calls, and output</span>
-      </button>
-      <button class="btn-export" onclick="doExport('json')" style="text-align:left;padding:12px">
-        <strong>JSON</strong><br><span style="font-size:11px;color:var(--text-dim)">Download raw messages as .json file — complete session data</span>
-      </button>
-      <button class="btn-export" onclick="doExport('kb-article')" style="text-align:left;padding:12px">
-        <strong>KB Article</strong><br><span style="font-size:11px;color:var(--text-dim)">Save as knowledge base article in kb/analysis/ with AI-generated metadata</span>
-      </button>
+    <!-- Step 1: Format selection -->
+    <div id="export-step-format">
+      <h3>Export Session</h3>
+      <p style="font-size:11px;color:var(--text-dim);margin-bottom:14px">Session ID: <code id="export-session-id" style="font-size:10px"></code></p>
+      <div style="display:flex;gap:8px;flex-direction:column">
+        <button class="btn-export" onclick="doExport('markdown')" style="text-align:left;padding:12px">
+          <strong>Markdown</strong><br><span style="font-size:11px;color:var(--text-dim)">Download full conversation as .md file with reasoning, tool calls, and output</span>
+        </button>
+        <button class="btn-export" onclick="doExport('json')" style="text-align:left;padding:12px">
+          <strong>JSON</strong><br><span style="font-size:11px;color:var(--text-dim)">Download raw messages as .json file — complete session data</span>
+        </button>
+        <button class="btn-export" onclick="showKbFolderPicker()" style="text-align:left;padding:12px">
+          <strong>KB Article</strong><br><span style="font-size:11px;color:var(--text-dim)">Save as knowledge base article with AI-generated metadata</span>
+        </button>
+      </div>
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn-cancel" onclick="closeExportModal()">Close</button>
+      </div>
     </div>
-    <div class="modal-actions" style="margin-top:12px">
-      <button class="btn-cancel" onclick="closeExportModal()">Close</button>
+    <!-- Step 2: KB folder picker -->
+    <div id="export-step-folder" style="display:none">
+      <h3>Choose KB Folder</h3>
+      <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px">Select a folder within <code>kb/</code> to save the article</p>
+      <div id="kb-folder-list" style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">
+        <input id="kb-new-folder-input" type="text" placeholder="New folder name..." style="flex:1;font-size:12px;padding:6px 8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;font-family:var(--font)">
+        <button class="btn-export" onclick="createKbFolderAndExport()" style="padding:6px 12px;white-space:nowrap;font-size:11px">Create &amp; Save</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="showExportStep('format')" style="font-size:11px">&larr; Back</button>
+        <button class="btn-cancel" onclick="closeExportModal()">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -884,6 +941,11 @@ async function loadSessions() {
   const { data } = await api('GET', '/api/sessions');
   S.sessions = data || [];
   renderSidebar();
+  // Auto-open the main session if no session is active
+  if (!S.activeId && S.sessions.length) {
+    const main = S.sessions.find(s => s.isMain);
+    if (main) openSession(main.id);
+  }
 }
 
 async function newSession() {
@@ -900,9 +962,14 @@ async function compactSession() {
   renderMessages(); scrollBottom();
   try {
     const { data, error } = await api('POST', `/api/sessions/${S.activeId}/compact`);
-    S.messages.pop(); // remove "Compacting..." message
-    if (error) { S.messages.push({ role: 'system', content: `Compact failed: ${error}`, timestamp: new Date().toISOString() }); }
-    else { S.messages.push({ role: 'system', content: `Session compacted. ${data.summary ? 'Summary preserved.' : ''} Context reset.`, timestamp: new Date().toISOString() }); }
+    if (error) {
+      S.messages.pop();
+      S.messages.push({ role: 'system', content: `Compact failed: ${error}`, timestamp: new Date().toISOString() });
+    } else {
+      // Reload messages from server (which now has compacted flags + history preserved)
+      const { data: msgs } = await api('GET', `/api/sessions/${S.activeId}/messages`);
+      S.messages = msgs || [];
+    }
     renderMessages(); scrollBottom();
     if (data && data.usage) updateContextBadge(data.usage);
   } catch (err) {
@@ -1020,25 +1087,70 @@ async function changeModel(model) {
 // Export session
 // ===========================================================================
 function showExportModal() {
-  if (!S.activeId) return;
+  if (!S.activeId) { alert('No session selected. Click a session in the sidebar first.'); return; }
   document.getElementById('export-session-id').textContent = S.activeId;
+  showExportStep('format');
   document.getElementById('export-modal').style.display = 'flex';
 }
 
 function closeExportModal() {
   document.getElementById('export-modal').style.display = 'none';
+  showExportStep('format');
 }
 
-async function doExport(format) {
+function showExportStep(step) {
+  document.getElementById('export-step-format').style.display = step === 'format' ? 'block' : 'none';
+  document.getElementById('export-step-folder').style.display = step === 'folder' ? 'block' : 'none';
+}
+
+async function showKbFolderPicker() {
+  showExportStep('folder');
+  const el = document.getElementById('kb-folder-list');
+  el.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:11px">Loading folders...</div>';
+  document.getElementById('kb-new-folder-input').value = '';
   try {
-    const { data, error } = await api('POST', `/api/sessions/${S.activeId}/export`, { format });
+    const { data } = await api('GET', '/api/kb/folders');
+    const folders = data || [];
+    if (!folders.length) {
+      el.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:11px">No folders yet — create one below</div>';
+    } else {
+      el.innerHTML = folders.map(f =>
+        `<button class="btn-export" onclick="doExport('kb-article','${f}')" style="text-align:left;padding:8px 12px;font-size:12px">` +
+        `<span style="margin-right:6px">&#128193;</span> kb/${f}/</button>`
+      ).join('');
+    }
+  } catch (e) {
+    el.innerHTML = '<div style="padding:8px;color:var(--error);font-size:11px">Failed to load folders</div>';
+  }
+}
+
+async function createKbFolderAndExport() {
+  const input = document.getElementById('kb-new-folder-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  try {
+    const { data, error } = await api('POST', '/api/kb/folders', { name });
+    if (error) throw new Error(error);
+    doExport('kb-article', data.name);
+  } catch (e) {
+    alert('Failed to create folder: ' + e.message);
+  }
+}
+
+async function doExport(format, kbFolder) {
+  try {
+    const body = { format };
+    if (kbFolder) body.kbFolder = kbFolder;
+    const { data, error } = await api('POST', `/api/sessions/${S.activeId}/export`, body);
     if (error) throw new Error(error);
 
     if (format === 'kb-article') {
       closeExportModal();
       const eb = document.getElementById('btn-export');
-      eb.classList.add('success'); eb.textContent = 'Saved to KB!';
-      setTimeout(() => { eb.classList.remove('success'); eb.textContent = 'Export'; }, 2000);
+      const folder = data.folder || 'analysis';
+      const label = data.updated ? `Saved v${data.version} to kb/${folder}/` : `Saved to kb/${folder}/`;
+      eb.classList.add('success'); eb.textContent = label;
+      setTimeout(() => { eb.classList.remove('success'); eb.textContent = 'Export'; }, 3000);
       await refreshFiles();
       return;
     }
@@ -1150,14 +1262,14 @@ function closeTab(filePath) {
 
 function toggleTree() {
   S.treeOpen = !S.treeOpen;
-  document.getElementById('file-tree').classList.toggle('hidden', !S.treeOpen || S.activeView !== 'files');
+  document.getElementById('file-tree-wrap').classList.toggle('hidden', !S.treeOpen || S.activeView !== 'files');
 }
 
 // ── Right pane view switching (Files / Drafts / Site / Database) ──
 function switchView(view) {
   S.activeView = view;
   // Toggle panels
-  document.getElementById('file-tree').classList.toggle('hidden', view !== 'files' || !S.treeOpen);
+  document.getElementById('file-tree-wrap').classList.toggle('hidden', view !== 'files' || !S.treeOpen);
   document.getElementById('viewer').style.display = view === 'files' ? '' : 'none';
   document.getElementById('drafts-panel').style.display = view === 'drafts' ? '' : 'none';
   document.getElementById('site-preview').style.display = view === 'site' ? 'flex' : 'none';
@@ -1821,6 +1933,26 @@ async function sendMessage() {
         databases: ssDatabases.map(d => ({ name: d.name, tableCount: d.tableCount, readonly: d.readonly })),
       }
     };
+  } else if (_sysSelectedItem) {
+    // System file browser selection
+    vc = {
+      systemBrowse: {
+        path: _sysSelectedItem.path,
+        isDir: _sysSelectedItem.isDir,
+        name: _sysSelectedItem.name,
+        children: _sysSelectedItem.isDir ? (_sysSelectedItem._children || _sysBrowseItems) : null,
+      }
+    };
+  } else if (S._selectedFolder) {
+    // Project folder selection
+    const folderFiles = (S.files || []).filter(f => f.path.startsWith(S._selectedFolder.path + '/') || f.path === S._selectedFolder.path);
+    vc = {
+      folder: {
+        path: S._selectedFolder.path,
+        name: S._selectedFolder.name,
+        children: folderFiles.map(f => ({ name: f.name, path: f.path, isDir: !!f.isDir, size: f.size })),
+      }
+    };
   } else if (S.viewer.file) {
     vc = {
       file: S.viewer.file, type: S.viewer.type, headers: S.viewer.headers, totalRows: S.viewer.totalRows,
@@ -1869,7 +2001,7 @@ async function sendMessage() {
           }
           if (data.type === 'tool_output') { S.messages.push({ role:'system', content:data.output, timestamp:new Date().toISOString(), tool:'output', toolId:data.id }); renderMessages(); scrollBottom(); }
           if (data.type === 'done') {
-            const final = data.result || fullText;
+            const final = fullText || data.result;
             // Remove partial assistant messages (they were mid-stream snapshots)
             S.messages = S.messages.filter(m => !m.partial);
             if (final) S.messages.push({ role:'assistant', content:final, timestamp:new Date().toISOString(), duration:data.duration, cost:data.cost, usage:data.usage });
@@ -1879,7 +2011,14 @@ async function sendMessage() {
             if (data.usage) updateContextBadge(data.usage);
             renderSidebar(); updateCost();
           }
-          if (data.type === 'error') { S.messages.push({ role:'system', content:`Error: ${data.message}`, timestamp:new Date().toISOString() }); renderMessages(); }
+          if (data.type === 'error') {
+            if (data.message && data.message.includes('CONTEXT_OVERFLOW')) {
+              S.messages.push({ role:'system', content:'Context window full — use /compact to summarize and continue.', timestamp:new Date().toISOString(), contextOverflow:true });
+            } else {
+              S.messages.push({ role:'system', content:`Error: ${data.message}`, timestamp:new Date().toISOString() });
+            }
+            renderMessages();
+          }
           if (data.type === 'close') { S.streaming = false; updateStreamingUI(); loadSessions(); }
         } catch (e) { console.error('SSE parse error:', e); }
       }
@@ -2041,6 +2180,8 @@ function toggleOutput(el) {
 }
 
 function renderMsg(msg) {
+  // Wrap compacted messages in a dim container
+  const _compactWrap = msg.compacted ? (html) => `<div style="opacity:0.5">${html}</div>` : (html) => html;
   // --- Thinking blocks: collapsed by default on reload, with char count ---
   if (msg.role==='thinking') {
     const len = (msg.content||'').length;
@@ -2051,7 +2192,7 @@ function renderMsg(msg) {
   // --- Tool output: smart rendering based on content type ---
   if (msg.tool==='output') {
     if ((msg.content||'').trimStart().startsWith('<!--html-->')) {
-      return `<div class="tool-output interactive">${msg.content.replace('<!--html-->','')}</div>`;
+      return _compactWrap(`<div class="tool-output interactive">${msg.content.replace('<!--html-->','')}</div>`);
     }
     const content = msg.content || '';
 
@@ -2079,7 +2220,7 @@ function renderMsg(msg) {
             }
           }
           const metaHtml = metaText ? `<div class="agent-meta">${esc(metaText)}</div>` : '';
-          return `<div class="tool-output agent-result"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span>&#129302; Agent result${metaText ? ' — ' + metaText : ''}</span></div><div class="agent-body md">${md(mainText)}</div>${metaHtml}</div>`;
+          return _compactWrap(`<div class="tool-output agent-result"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span>&#129302; Agent result${metaText ? ' — ' + metaText : ''}</span></div><div class="agent-body md">${md(mainText)}</div>${metaHtml}</div>`);
         }
       } catch {}
     }
@@ -2088,46 +2229,53 @@ function renderMsg(msg) {
     const isError = (content.startsWith('Exit code') && !content.startsWith('Exit code 0')) || content.includes('Traceback (most recent call last)');
     if (isError) {
       const lineCount = content.split('\n').length;
-      return `<div class="tool-output error-output collapsed"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span style="color:var(--red)">&#9888; Error (${lineCount} lines)</span></div><pre>${esc(content)}</pre></div>`;
+      return _compactWrap(`<div class="tool-output error-output collapsed"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span style="color:var(--red)">&#9888; Error (${lineCount} lines)</span></div><pre>${esc(content)}</pre></div>`);
     }
 
     const lineCount = content.split('\n').length;
     const truncated = content.length > 4000;
     const collapsed = lineCount > 8 ? ' collapsed' : '';
     const meta = `${lineCount} line${lineCount!==1?'s':''}${truncated?' (truncated)':''}`;
-    return `<div class="tool-output${collapsed}"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span>${meta}</span></div><pre>${esc(content)}</pre></div>`;
+    return _compactWrap(`<div class="tool-output${collapsed}"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span>${meta}</span></div><pre>${esc(content)}</pre></div>`);
   }
 
   // --- Bash commands: terminal-style ---
   if (msg.tool && (msg.content||'').startsWith('$ ')) {
-    return `<div class="tool-event bash-cmd"><span class="tool-icon">${toolIcon('Bash')}</span><span class="tool-label">${toolLabel('Bash')}</span><code>${esc(msg.content)}</code></div>`;
+    return _compactWrap(`<div class="tool-event bash-cmd"><span class="tool-icon">${toolIcon('Bash')}</span><span class="tool-label">${toolLabel('Bash')}</span><code>${esc(msg.content)}</code></div>`);
   }
 
   // --- Agent tool: show description prominently ---
   if (msg.tool === 'Agent') {
     const desc = (msg.content||'').replace(/^Using Agent\.\.\.$/,'').trim();
     if (desc && desc !== 'Using Agent...') {
-      return `<div class="tool-event agent-cmd"><span class="tool-icon">${toolIcon('Agent')}</span><span class="tool-label">sub-agent</span><span class="agent-desc">${esc(desc)}</span></div>`;
+      return _compactWrap(`<div class="tool-event agent-cmd"><span class="tool-icon">${toolIcon('Agent')}</span><span class="tool-label">sub-agent</span><span class="agent-desc">${esc(desc)}</span></div>`);
     }
-    return `<div class="tool-event agent-cmd"><span class="tool-icon">${toolIcon('Agent')}</span><span class="tool-label">launching sub-agent</span></div>`;
+    return _compactWrap(`<div class="tool-event agent-cmd"><span class="tool-icon">${toolIcon('Agent')}</span><span class="tool-label">launching sub-agent</span></div>`);
   }
 
   // --- Other tool events: labeled with tool type ---
   if (msg.tool) {
     const cls = toolClass(msg.tool);
-    return `<div class="tool-event ${cls}"><span class="tool-icon">${toolIcon(msg.tool)}</span><span class="tool-label">${toolLabel(msg.tool)}</span>${esc(msg.content)}</div>`;
+    return _compactWrap(`<div class="tool-event ${cls}"><span class="tool-icon">${toolIcon(msg.tool)}</span><span class="tool-label">${toolLabel(msg.tool)}</span>${esc(msg.content)}</div>`);
   }
 
+  // --- Compaction divider ---
+  if (msg.compactMarker) return `<div class="compact-divider" style="text-align:center;padding:12px 0;margin:16px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)"><span style="color:var(--gold);font-size:0.85em">&#9473; Session compacted &#9473;</span></div>`;
   // --- System messages ---
-  if (msg.role==='system') return `<div class="msg"><div class="msg-header"><span class="msg-sender system">system</span></div><div class="msg-body" style="color:var(--text-dim)">${esc(msg.content)}</div></div>`;
+  if (msg.role==='system') {
+    const dimStyle = msg.compacted ? 'opacity:0.5;' : '';
+    if (msg.contextOverflow) return `<div class="msg"><div class="msg-header"><span class="msg-sender system">system</span></div><div class="msg-body" style="color:var(--gold)"><strong>Context window full</strong> — use <code>/compact</code> to summarize and continue.<br><button onclick="compactSession()" style="margin-top:8px;padding:6px 16px;background:var(--gold);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:600">Compact Session</button></div></div>`;
+    return `<div class="msg" style="${dimStyle}"><div class="msg-header"><span class="msg-sender system">system</span></div><div class="msg-body" style="color:var(--text-dim)">${esc(msg.content)}</div></div>`;
+  }
 
   // --- User / Assistant messages ---
+  const dimStyle = msg.compacted ? ' style="opacity:0.5"' : '';
   const sender = msg.role==='user'?'you':(S.agentName||'claude');
   const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
   const dur = msg.duration!=null ? `<span class="msg-dur">${(msg.duration/1000).toFixed(1)}s</span>` : '';
   const cost = msg.cost!=null&&msg.cost>0 ? `<span class="msg-cost">$${msg.cost<0.01?msg.cost.toFixed(3):msg.cost.toFixed(2)}</span>` : '';
   const body = msg.role==='assistant' ? `<div class="msg-body md">${md(msg.content)}</div>` : `<div class="msg-body user-body">${esc(msg.content)}</div>`;
-  return `<div class="msg"><div class="msg-header"><span class="msg-sender ${msg.role}">${sender}</span><span class="msg-time">${time}</span>${dur}${cost}</div>${body}</div>`;
+  return `<div class="msg"${dimStyle}><div class="msg-header"><span class="msg-sender ${msg.role}">${sender}</span><span class="msg-time">${time}</span>${dur}${cost}</div>${body}</div>`;
 }
 
 // ===========================================================================
@@ -2142,14 +2290,17 @@ function fileIcon(name) {
   return '&#128196;';
 }
 
-function renderFileTree() {
+function renderFileTree(skipCapture) {
   const el = document.getElementById('file-tree');
   const files = S.files || [];
 
   // Capture which folders are currently open before re-render
+  // (skip when called from selectFolder — it already set S.openDirs correctly)
   if (!S.openDirs) S.openDirs = new Set();
-  el.querySelectorAll('details[open]').forEach(d => S.openDirs.add(d.dataset.dir));
-  el.querySelectorAll('details:not([open])').forEach(d => S.openDirs.delete(d.dataset.dir));
+  if (!skipCapture) {
+    el.querySelectorAll('details[open]').forEach(d => S.openDirs.add(d.dataset.dir));
+    el.querySelectorAll('details:not([open])').forEach(d => S.openDirs.delete(d.dataset.dir));
+  }
 
   // Build tree structure from flat list
   const tree = {};
@@ -2189,7 +2340,8 @@ function renderFileTree() {
         const isOutputDir = dirPath === 'output';
         const isOpen = S.openDirs.has(dirPath) || (S.openDirs.size === 0 && depth < 1 && !isOutputDir);
         const outputLabel = isOutputDir ? ' <span style="font-size:9px;color:var(--text-dim);font-weight:400" title="Pipeline output — use Database tab for full experience">· pipeline</span>' : '';
-        html += `<details class="tree-group" data-dir="${dirPath}" ${isOpen ? 'open' : ''}><summary style="padding-left:${pad}px" oncontextmenu="showFmCtx(event,'${esc(dirPath)}',true,'${esc(name)}')">&#128193; ${esc(name)}${outputLabel}</summary>`;
+        const folderSelected = S._selectedFolder && S._selectedFolder.path === dirPath ? ' folder-selected' : '';
+        html += `<details class="tree-group" data-dir="${dirPath}" ${isOpen ? 'open' : ''}><summary class="${folderSelected}" style="padding-left:${pad}px" onclick="selectFolder('${esc(dirPath)}','${esc(name)}')" oncontextmenu="showFmCtx(event,'${esc(dirPath)}',true,'${esc(name)}')">&#128193; ${esc(name)}${outputLabel}</summary>`;
         html += renderNode(val._children, depth + 1, dirPath);
         html += '</details>';
       } else {
@@ -2530,20 +2682,39 @@ function askAboutSelection() {
 function updateContextIndicator() {
   const el = document.getElementById('context-indicator');
   const v = S.viewer;
-  if (!v.file) {
-    el.innerHTML = '';
-    document.getElementById('input-hint').textContent = '';
-    return;
+  let pills = '';
+  let hint = '';
+
+  // System browser selection pill
+  if (_sysSelectedItem) {
+    const sLabel = _sysSelectedItem.name;
+    const sIcon = _sysSelectedItem.isDir ? '&#128193;' : '&#128196;';
+    const sType = _sysSelectedItem.isDir ? 'folder' : 'file';
+    pills += `<span class="context-pill">${sIcon} ${esc(sLabel)} <span style="opacity:0.5;font-size:9px">(system ${sType})</span><button onclick="clearSysSelection()" title="Clear selection">&#x2715;</button></span>`;
+    hint = `Claude sees this system ${sType}`;
   }
-  let label = v.file.split('/').pop();
-  let hint = 'Claude sees this file';
-  const hasSel = v.selectedCell || v.selectedRow || v.selectedCol;
-  if (v.selectedCell) { label += ` \u2192 "${v.selectedCell.col}" = ${v.selectedCell.value}`; hint = 'Claude will see your selection'; }
-  else if (v.selectedRow) { label += ` \u2192 row ${v.selectedRow.index + 1}`; hint = 'Claude will see your selection'; }
-  else if (v.selectedCol) { label += ` \u2192 col "${v.selectedCol.name}"`; hint = 'Claude will see your selection'; }
-  else if (v.totalRows) { label += ` \u2014 ${v.totalRows} rows`; }
-  const clearBtn = hasSel ? `<button onclick="clearViewerSelection()" title="Clear selection">&#x2715;</button>` : '';
-  el.innerHTML = `<span class="context-pill">&#128065; ${esc(label)}${clearBtn}</span>`;
+
+  // Project folder selection pill
+  if (S._selectedFolder) {
+    const fLabel = S._selectedFolder.name;
+    pills += `<span class="context-pill">&#128193; ${esc(fLabel)} <span style="opacity:0.5;font-size:9px">(folder)</span><button onclick="S._selectedFolder=null;renderFileTree();updateContextIndicator()" title="Clear selection">&#x2715;</button></span>`;
+    hint = 'Claude sees this folder';
+  }
+
+  // File viewer pill
+  if (v.file) {
+    let label = v.file.split('/').pop();
+    const hasSel = v.selectedCell || v.selectedRow || v.selectedCol;
+    if (v.selectedCell) { label += ` \u2192 "${v.selectedCell.col}" = ${v.selectedCell.value}`; hint = 'Claude will see your selection'; }
+    else if (v.selectedRow) { label += ` \u2192 row ${v.selectedRow.index + 1}`; hint = 'Claude will see your selection'; }
+    else if (v.selectedCol) { label += ` \u2192 col "${v.selectedCol.name}"`; hint = 'Claude will see your selection'; }
+    else if (v.totalRows) { label += ` \u2014 ${v.totalRows} rows`; }
+    if (!hint) hint = 'Claude sees this file';
+    const clearBtn = hasSel ? `<button onclick="clearViewerSelection()" title="Clear selection">&#x2715;</button>` : '';
+    pills += `<span class="context-pill">&#128065; ${esc(label)}${clearBtn}</span>`;
+  }
+
+  el.innerHTML = pills;
   document.getElementById('input-hint').textContent = hint;
 }
 
@@ -2888,6 +3059,176 @@ function initSidebarGutter() {
   });
 }
 
+// --- File-tree gutter drag (split between project files and system browser) ---
+function initFileTreeGutter() {
+  const gutter = document.getElementById('ft-gutter');
+  const fileTree = document.getElementById('file-tree');
+  const sysBrowser = document.getElementById('system-browser');
+  let startY, startTreeH;
+
+  gutter.addEventListener('mousedown', e => {
+    e.preventDefault();
+    startY = e.clientY;
+    startTreeH = fileTree.getBoundingClientRect().height;
+    const onMove = e => {
+      const delta = e.clientY - startY;
+      const newH = Math.max(60, startTreeH + delta);
+      fileTree.style.flex = `0 0 ${newH}px`;
+      sysBrowser.style.flex = '1 1 auto';
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ===========================================================================
+// System File Browser — browse from filesystem root
+// ===========================================================================
+let _sysBrowsePath = '/';
+let _sysBrowseItems = [];
+let _sysSelectedItem = null; // { path, isDir, name }
+
+async function sysBrowse(dirPath) {
+  try {
+    const { data, error } = await api('GET', `/api/system-browse?path=${encodeURIComponent(dirPath)}`);
+    if (error) { console.warn('sysBrowse error:', error); return; }
+    _sysBrowsePath = data.path;
+    _sysBrowseItems = data.items || [];
+    document.getElementById('sys-path-label').textContent = _sysBrowsePath;
+    document.getElementById('sys-path-label').title = _sysBrowsePath;
+    renderSystemBrowser();
+  } catch (e) { console.warn('sysBrowse failed:', e); }
+}
+
+function sysBrowseUp() {
+  if (_sysBrowsePath === '/') return;
+  const parent = _sysBrowsePath.replace(/\/[^/]+\/?$/, '') || '/';
+  sysBrowse(parent);
+}
+
+function renderSystemBrowser() {
+  const el = document.getElementById('system-browser-list');
+  if (!_sysBrowseItems.length) {
+    el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:10px;text-align:center">Empty or no access</div>';
+    return;
+  }
+  el.innerHTML = _sysBrowseItems.map((item, idx) => {
+    const icon = item.isDir ? '&#128193;' : fileIcon(item.name);
+    const active = _sysSelectedItem && _sysSelectedItem.path === item.path ? 'active' : '';
+    const size = !item.isDir && item.size != null ? `<span class="sys-size">${formatSize(item.size)}</span>` : '';
+    return `<div class="sys-item ${active}" onclick="sysSelectItem(${idx})" ondblclick="sysOpenItem(${idx})" title="${esc(item.path)}"><span class="sys-icon">${icon}</span>${esc(item.name)}${size}</div>`;
+  }).join('');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+async function sysSelectItem(idx) {
+  const item = _sysBrowseItems[idx];
+  if (!item) return;
+  _sysSelectedItem = { ...item };
+  // If it's a directory, fetch its contents for AI context
+  if (item.isDir) {
+    try {
+      const { data } = await api('GET', `/api/system-browse?path=${encodeURIComponent(item.path)}`);
+      if (data && data.items) _sysSelectedItem._children = data.items;
+    } catch {}
+  } else {
+    // Open the file in the viewer pane
+    await openSystemFile(item.path, item.name);
+  }
+  // Clear project-tree folder selection
+  S._selectedFolder = null;
+  renderSystemBrowser();
+  updateContextIndicator();
+}
+
+function sysOpenItem(idx) {
+  const item = _sysBrowseItems[idx];
+  if (!item) return;
+  if (item.isDir) {
+    sysBrowse(item.path);
+  } else {
+    sysSelectItem(idx);
+  }
+}
+
+// Open a system file (absolute path) in the viewer pane
+async function openSystemFile(absPath, name) {
+  const cacheKey = 'sys:' + absPath;
+  // Add tab if not open
+  if (!S.openTabs.find(t => t.path === cacheKey)) {
+    const ext = (name || '').split('.').pop().toLowerCase();
+    const type = ext === 'csv' ? 'csv' : ext === 'xlsx' ? 'xlsx' : ext === 'md' ? 'md' : ext === 'json' ? 'json' : 'text';
+    S.openTabs.push({ path: cacheKey, name: name || absPath.split('/').pop(), type });
+  }
+  S.activeTab = cacheKey;
+
+  // Load if not cached
+  if (!S.fileCache[cacheKey]) {
+    const { data, error } = await api('GET', `/api/system-file?path=${encodeURIComponent(absPath)}`);
+    if (error || !data) { console.warn('System file error:', error); return; }
+    // Store with the sys: prefixed key
+    data.path = cacheKey;
+    S.fileCache[cacheKey] = data;
+  }
+
+  const cached = S.fileCache[cacheKey];
+  if (!cached) return;
+
+  if (cached.type === 'xlsx') {
+    const sheet = (cached.sheets || [])[0] || { headers: [], rows: [] };
+    S.viewer = { file: cacheKey, type: 'xlsx', activeSheet: 0, headers: sheet.headers || [], totalRows: sheet.totalRows || (sheet.rows || []).length, selectedCell: null, selectedRow: null, selectedCol: null, sortBy: null, sortDir: 'asc', search: '' };
+  } else {
+    S.viewer = { file: cacheKey, type: cached.type, headers: cached.headers || [], totalRows: (cached.rows || []).length, selectedCell: null, selectedRow: null, selectedCol: null, sortBy: null, sortDir: 'asc', search: '' };
+  }
+
+  // Make sure we're on the Files view
+  switchView('files');
+  renderTabs(); renderViewer(); renderContextBar(); renderFileTree();
+  updateContextIndicator();
+}
+
+function clearSysSelection() {
+  _sysSelectedItem = null;
+  renderSystemBrowser();
+  updateContextIndicator();
+}
+
+// ===========================================================================
+// Folder selection in project file tree
+// ===========================================================================
+function selectFolder(dirPath, dirName) {
+  if (S._selectedFolder && S._selectedFolder.path === dirPath) {
+    S._selectedFolder = null; // toggle off
+  } else {
+    S._selectedFolder = { path: dirPath, name: dirName };
+  }
+  // Manually toggle the directory open/closed state before re-render,
+  // because the browser's native <details> toggle fires AFTER onclick
+  // and our re-render destroys the old DOM element before it can toggle.
+  if (!S.openDirs) S.openDirs = new Set();
+  // Capture current state from DOM first
+  const el = document.getElementById('file-tree');
+  el.querySelectorAll('details[open]').forEach(d => S.openDirs.add(d.dataset.dir));
+  el.querySelectorAll('details:not([open])').forEach(d => S.openDirs.delete(d.dataset.dir));
+  // Now toggle this specific dir
+  if (S.openDirs.has(dirPath)) {
+    S.openDirs.delete(dirPath);
+  } else {
+    S.openDirs.add(dirPath);
+  }
+  // Clear system browser selection
+  _sysSelectedItem = null;
+  renderSystemBrowser();
+  renderFileTree(true);  // skip DOM capture — we already set S.openDirs above
+  updateContextIndicator();
+}
+
 // Legacy wrappers — keep these so existing code doesn't break
 function renderSidebarFooter() {} // no longer needed
 async function showScriptsPanel() { switchSbTab('scripts'); }
@@ -2959,6 +3300,8 @@ loadFiles();
 renderMessages();
 initGutter();
 initSidebarGutter();
+initFileTreeGutter();
+sysBrowse('/');
 renderSbPanel();
 
 // Auto-open database.csv if it exists (skip for instances without an engine)
@@ -3257,6 +3600,27 @@ async function ssAddCol() {
     ssSelectTable(ssActiveDb, ssActiveTable);
   } catch (e) {
     document.getElementById('ss-status').textContent = `Error: ${e.message}`;
+  }
+}
+
+// Create a new empty database
+async function ssCreateDb() {
+  const name = prompt('New database name (letters, numbers, hyphens, underscores):');
+  if (!name) return;
+  const status = document.getElementById('ss-status');
+  status.textContent = 'Creating database...';
+  try {
+    const result = await api('POST', '/api/database/create', { name });
+    if (result.error) throw new Error(result.error);
+    const dbName = name.replace(/[^a-zA-Z0-9_-]/g, '');
+    ssActiveDb = dbName.endsWith('.db') ? dbName : dbName + '.db';
+    ssActiveTable = null;
+    ssRefresh();
+    status.textContent = `Created "${ssActiveDb}"`;
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+    status.style.color = 'var(--error)';
+    setTimeout(() => { status.style.color = ''; }, 4000);
   }
 }
 

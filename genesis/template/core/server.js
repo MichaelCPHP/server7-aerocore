@@ -246,6 +246,35 @@ function buildViewerContext(vc) {
     lines.push('[END DATABASE VIEWER CONTEXT]');
     return lines.join('\n');
   }
+  // System browse context (file or folder selected from system file browser)
+  if (vc.systemBrowse) {
+    const sb = vc.systemBrowse;
+    const lines = ['[SYSTEM BROWSE CONTEXT]'];
+    lines.push(`Selected ${sb.isDir ? 'folder' : 'file'}: ${sb.path}`);
+    if (sb.isDir && sb.children && sb.children.length) {
+      lines.push(`Folder contents (${sb.children.length} items):`);
+      for (const c of sb.children.slice(0, 30)) {
+        lines.push(`  ${c.isDir ? '📁' : '📄'} ${c.name}${c.size != null ? ` (${c.size} bytes)` : ''}`);
+      }
+      if (sb.children.length > 30) lines.push(`  ... and ${sb.children.length - 30} more items`);
+    }
+    lines.push('[END SYSTEM BROWSE CONTEXT]');
+    return lines.join('\n');
+  }
+  // Folder context (folder selected in project file tree)
+  if (vc.folder) {
+    const lines = ['[VIEWER CONTEXT]'];
+    lines.push(`Selected folder: ${vc.folder.path}`);
+    if (vc.folder.children && vc.folder.children.length) {
+      lines.push(`Folder contents (${vc.folder.children.length} items):`);
+      for (const c of vc.folder.children.slice(0, 30)) {
+        lines.push(`  ${c.isDir ? '📁' : '📄'} ${c.name}${c.size != null ? ` (${c.size} bytes)` : ''}`);
+      }
+      if (vc.folder.children.length > 30) lines.push(`  ... and ${vc.folder.children.length - 30} more items`);
+    }
+    lines.push('[END VIEWER CONTEXT]');
+    return lines.join('\n');
+  }
   // File viewer context
   if (!vc.file) return '';
   const lines = ['[VIEWER CONTEXT]'];
@@ -1649,6 +1678,8 @@ cd "${WORK_DIR}"
     let toolJsonBuf = {}; // index -> partial JSON string for tool input
     let thinkingBuf = {}; // index -> accumulated thinking text
     let seenToolIds = new Set();
+    let assistantSaved = false; // prevent duplicate saves from assistant + result events
+    let contextOverflowHandled = false; // suppress close error if overflow already sent via result event
 
     proc.stderr.on('data', chunk => { stderr += chunk.toString(); });
 
@@ -1743,6 +1774,12 @@ cd "${WORK_DIR}"
 
         // --- result: final ---
         else if (event.type === 'result') {
+          // Detect context overflow from result event (Claude CLI returns is_error + "Prompt is too long")
+          if (event.is_error && /prompt.*(too long|too large)/i.test(event.result || '')) {
+            log(`Context overflow detected: ${(event.result || '').slice(0, 100)}`);
+            event._contextOverflow = true;
+            contextOverflowHandled = true;
+          }
           updateSession(sessionId, {
             lastMessageAt: new Date().toISOString(),
             totalCost: (session.totalCost || 0) + (event.total_cost_usd || 0),
@@ -1750,23 +1787,27 @@ cd "${WORK_DIR}"
           onEvent(event);
         }
 
-        // Complete assistant message — save text to session for channel invocations
+        // Complete assistant message — save for channel invocations, skip for chat (result event saves with metadata)
         else if (event.type === 'assistant') {
           const content = event.message?.content || [];
           const types = content.map(b => b.type).join(',');
-          log(`Assistant event: ${content.length} blocks [${types}]`);
-          const textParts = content
-            .filter(b => b.type === 'text')
-            .map(b => b.text)
-            .join('');
-          if (textParts) {
-            log(`Saving assistant text (${textParts.length} chars) to session ${sessionId.slice(0,8)}`);
-            appendMessage(sessionId, {
-              role: 'assistant', content: textParts,
-              timestamp: new Date().toISOString(),
-            });
+          const isError = event.error || event.message?.error;
+          log(`Assistant event: ${content.length} blocks [${types}]${isError ? ' (error: ' + isError + ')' : ''}`);
+          // Skip saving error responses (e.g. "Prompt is too long")
+          if (isError) {
+            log(`Skipping save for error assistant event: ${isError}`);
           } else {
-            log(`Assistant event had no text content (types: ${types})`);
+            const textParts = content
+              .filter(b => b.type === 'text')
+              .map(b => b.text)
+              .join('');
+            if (textParts && !assistantSaved) {
+              assistantSaved = true; // mark so result event can skip duplicate save
+              appendMessage(sessionId, {
+                role: 'assistant', content: textParts,
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
         }
 
@@ -1778,13 +1819,31 @@ cd "${WORK_DIR}"
       reject(err);
     });
 
+    // Wait for readline to finish processing all buffered lines before handling close
+    let rlClosed = false;
+    rl.on('close', () => { rlClosed = true; });
+
     proc.on('close', async code => {
       activeProcs.delete(sessionId);
+      // Wait for readline to drain any buffered lines (up to 500ms)
+      if (!rlClosed) await new Promise(r => { rl.on('close', r); setTimeout(r, 500); });
       const dur = ((Date.now() - startTime) / 1000).toFixed(1);
       await unlink(scriptPath).catch(() => {});
       if (code !== 0) {
         log(`Claude exited ${code} (${dur}s): ${stderr.slice(0, 200)}`);
-        reject(new Error(`Claude exited ${code}: ${stderr.slice(0, 500)}`));
+        // If context overflow was already handled via result event, resolve cleanly
+        if (contextOverflowHandled) {
+          log(`Context overflow already handled via result event, resolving`);
+          resolve();
+          return;
+        }
+        // Detect context window overflow from stderr (fallback)
+        const isContextOverflow = /prompt.*(too long|too large)|context.*exceed|token.*limit|max.*context/i.test(stderr);
+        if (isContextOverflow) {
+          reject(new Error('CONTEXT_OVERFLOW: The conversation has exceeded the context window. Use /compact to summarize and reset the context.'));
+        } else {
+          reject(new Error(`Claude exited ${code}: ${stderr.slice(0, 500)}`));
+        }
         return;
       }
       log(`Claude completed (${dur}s)`);
@@ -2482,26 +2541,68 @@ const server = http.createServer(async (req, res) => {
     const session = getSession(sessionId);
     if (!session) { json(res, { error: 'Session not found' }, 404); return; }
     const messages = getMessages(sessionId);
-    // Build a summary of the conversation
-    const userMsgs = messages.filter(m => m.role === 'user').map(m => m.content);
-    const assistantMsgs = messages.filter(m => m.role === 'assistant').map(m => typeof m.content === 'string' ? m.content.slice(0, 500) : '');
-    const summary = [
+    // Only summarize non-compacted messages (new content since last compact)
+    const activeMsgs = messages.filter(m => !m.compacted && !m.compactMarker);
+    const allUserMsgs = activeMsgs.filter(m => m.role === 'user').map(m => m.content);
+    const allAssistantMsgs = activeMsgs.filter(m => m.role === 'assistant').map(m => typeof m.content === 'string' ? m.content.slice(0, 800) : '');
+    // Include key tool outputs (bash results, agent results) for richer context
+    const toolOutputs = activeMsgs
+      .filter(m => m.tool === 'output' && m.content && m.content.length < 500)
+      .slice(-5)
+      .map(m => m.content.slice(0, 200));
+    // Build comprehensive compact summary
+    const summaryParts = [
       `[SESSION COMPACTED]`,
       `Session: ${session.title} (${session.id.slice(0,8)})`,
-      `Messages before compaction: ${messages.length}`,
-      `Topics discussed: ${userMsgs.slice(-10).join(' | ').slice(0, 1000)}`,
-      `---`,
-      `Last assistant context (summary): ${assistantMsgs.slice(-3).join('\n---\n').slice(0, 2000)}`,
-    ].join('\n');
+      `Date: ${new Date().toISOString().slice(0, 10)}`,
+      `Messages before compaction: ${activeMsgs.length} (${allUserMsgs.length} user, ${allAssistantMsgs.length} assistant)`,
+      `\nUser messages (full text):\n${allUserMsgs.map(m => `- ${m}`).join('\n').slice(0, 6000)}`,
+      `\n---\nAssistant context (last ${Math.min(5, allAssistantMsgs.length)} responses):\n${allAssistantMsgs.slice(-5).join('\n---\n').slice(0, 4000)}`,
+    ];
+    if (toolOutputs.length) {
+      summaryParts.push(`\n---\nKey tool outputs:\n${toolOutputs.join('\n')}`);
+    }
+    // Include prior compact summaries so context chains across multiple compacts
+    const priorCompacts = messages.filter(m => m.compacted && m.role === 'system' && (m.content || '').startsWith('[SESSION COMPACTED]'));
+    if (priorCompacts.length) {
+      summaryParts.push(`\n---\nPrior session context (${priorCompacts.length} earlier compact(s)):\n${priorCompacts.map(m => m.content).join('\n===\n').slice(0, 3000)}`);
+    }
+    const summary = summaryParts.join('\n');
+
     // Reset claudeSessionId to force a fresh Claude session
     updateSession(sessionId, { claudeSessionId: null });
-    // Replace messages with compaction marker
-    const compactedMessages = [
-      { role: 'system', content: summary, timestamp: new Date().toISOString() },
-      { role: 'system', content: `Session compacted at ${new Date().toISOString()}. ${messages.length} messages summarized. Context window reset.`, timestamp: new Date().toISOString() },
-    ];
+    // Mark all existing messages as compacted (preserved for display, not sent to Claude)
+    const compactedMessages = messages.map(m => m.compacted ? m : { ...m, compacted: true });
+    // Prepend compaction markers
+    compactedMessages.unshift(
+      { role: 'system', content: summary, timestamp: new Date().toISOString(), compacted: true },
+      { role: 'system', content: `Session compacted at ${new Date().toISOString()}. ${messages.length} messages summarized. Context window reset.`, timestamp: new Date().toISOString(), compactMarker: true },
+    );
     fs.writeFileSync(path.join(MESSAGES_DIR, `${sessionId}.json`), JSON.stringify(compactedMessages));
-    log(`Session compacted: ${sessionId.slice(0,8)} (${messages.length} messages → summary)`);
+    log(`Session compacted: ${sessionId.slice(0,8)} (${messages.length} messages preserved with compacted flag)`);
+
+    // Also save compact summary to agent persistent memory (survives across sessions)
+    try {
+      const agentDir = path.join(ROOT, 'agent');
+      if (fs.existsSync(agentDir)) {
+        const memoryDir = path.join(agentDir, 'memory');
+        fs.mkdirSync(memoryDir, { recursive: true });
+        const now = new Date();
+        const slug = `session_${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, '')}`;
+        const memContent = `---\nname: ${session.title || 'Compacted Session'}\ndescription: Compact summary of session ${sessionId.slice(0,8)} (${now.toISOString().slice(0,10)})\ntype: session\n---\n\n${summary}\n`;
+        fs.writeFileSync(path.join(memoryDir, `${slug}.md`), memContent);
+        // Prune old session files (keep max 10)
+        const sessionFiles = fs.readdirSync(memoryDir).filter(f => f.startsWith('session_') && f.endsWith('.md')).sort();
+        while (sessionFiles.length > 10) {
+          const oldest = sessionFiles.shift();
+          try { fs.unlinkSync(path.join(memoryDir, oldest)); } catch {}
+        }
+        rebuildMemoryIndex();
+        _agentMemoryCache = null;
+        log(`Compact summary saved to agent memory: ${slug}`);
+      }
+    } catch (e) { log(`Compact memory save error: ${e.message}`); }
+
     json(res, { data: { ok: true, summary: true, previousMessageCount: messages.length } });
     return;
   }
@@ -2535,7 +2636,19 @@ const server = http.createServer(async (req, res) => {
 
     const vcBlock = buildViewerContext(viewerContext);
     const context = buildDataContext(message);
-    const enriched = `${vcBlock ? vcBlock + '\n\n' : ''}${context}\n\n---\n\nUser question: ${message}`;
+    // If this is the first message after a compact, include compact summaries so Claude has prior context
+    let compactContext = '';
+    if (!session.claudeSessionId) {
+      const allMsgs = getMessages(sessionId);
+      // Collect the MOST RECENT compact summary (which already chains prior compacts within it)
+      const compactSummaries = allMsgs.filter(m => m.compacted && m.role === 'system' && (m.content || '').startsWith('[SESSION COMPACTED]'));
+      if (compactSummaries.length) {
+        // Use the most recent one — it already contains prior compact summaries chained inside it
+        const latest = compactSummaries[0];
+        compactContext = `[PRIOR SESSION CONTEXT]\nThis session was compacted. The user may reference things from earlier in the conversation. Here is a comprehensive summary of everything discussed:\n\n${latest.content}\n[END PRIOR CONTEXT]\n\n`;
+      }
+    }
+    const enriched = `${compactContext}${vcBlock ? vcBlock + '\n\n' : ''}${context}\n\n---\n\nUser question: ${message}`;
 
     try {
       await sendToClaudeStream(sessionId, enriched, event => {
@@ -2565,6 +2678,11 @@ const server = http.createServer(async (req, res) => {
           } else if (event.type === 'result') {
             const duration = Date.now() - startTime;
             const usage = event.usage || {};
+            // Handle context overflow — send error event instead of done
+            if (event._contextOverflow) {
+              sse({ type: 'error', message: 'CONTEXT_OVERFLOW: The conversation has exceeded the context window. Use /compact to summarize and reset the context.' });
+              sessionBroadcast(sessionId, { type: 'stream', event: { type: 'error', message: 'CONTEXT_OVERFLOW' } });
+            } else {
             const doneEv = {
               type: 'done', result: event.result, sessionId: event.session_id,
               duration, cost: event.total_cost_usd, num_turns: event.num_turns,
@@ -2572,12 +2690,29 @@ const server = http.createServer(async (req, res) => {
             };
             sse(doneEv);
             sessionBroadcast(sessionId, { type: 'stream', event: doneEv });
+            // Update the already-saved assistant message with duration/cost metadata
+            // (assistant event in sendToClaudeStream already saved the text)
             if (event.result) {
-              appendMessage(sessionId, {
-                role: 'assistant', content: event.result,
-                timestamp: new Date().toISOString(), duration, cost: event.total_cost_usd,
-              });
+              const msgs = getMessages(sessionId);
+              // Find last assistant message without duration (saved by assistant event, needs metadata)
+              const lastIdx = msgs.length - 1;
+              const last = lastIdx >= 0 ? msgs[lastIdx] : null;
+              if (last && last.role === 'assistant' && last.duration == null) {
+                // Update with result text + metadata (result text is authoritative)
+                last.content = event.result;
+                last.duration = duration;
+                last.cost = event.total_cost_usd;
+                fs.writeFileSync(path.join(MESSAGES_DIR, `${sessionId}.json`), JSON.stringify(msgs));
+              } else if (!last || last.role !== 'assistant') {
+                // Fallback: no prior assistant save, create new
+                appendMessage(sessionId, {
+                  role: 'assistant', content: event.result,
+                  timestamp: new Date().toISOString(), duration, cost: event.total_cost_usd,
+                });
+              }
+              // else: last assistant already has duration (somehow saved twice) — skip
             }
+            } // end else (non-overflow result)
           }
         } catch (e) { log(`SSE event error: ${e.message}`); }
       });
@@ -2678,9 +2813,9 @@ const server = http.createServer(async (req, res) => {
     return fs.existsSync(fullPath) ? fullPath : DEFAULT_USER_DB;
   }
 
-  // Check if a database is read-only (anything other than the user database spreadsheet.db)
+  // Check if a database is read-only (only jubilee.db is read-only — it's pipeline-generated)
   function isReadOnlyDb(dbPath) {
-    return path.basename(dbPath) !== 'spreadsheet.db';
+    return path.basename(dbPath) === 'jubilee.db';
   }
 
   // Discover all SQLite databases in output/
@@ -2696,7 +2831,7 @@ const server = http.createServer(async (req, res) => {
           databases.push({
             name: file,
             path: `output/${file}`,
-            readonly: file !== 'spreadsheet.db',
+            readonly: file === 'jubilee.db',
             tables: tables,
             tableCount: tables.length,
             size: fs.statSync(dbPath).size,
@@ -2753,11 +2888,13 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/api/database/table' && m === 'POST') {
     const body = await parseBody(req);
-    const { name, columns } = body;
+    const { name, columns, db } = body;
     if (!name) { json(res, { error: 'Missing table name' }, 400); return; }
+    const dbPath = db ? path.join(OUTPUT_DIR_SS, path.basename(db)) : DEFAULT_USER_DB;
+    if (isReadOnlyDb(dbPath)) { json(res, { error: 'Database is read-only' }, 403); return; }
     const cols = (columns || ['Column_A', 'Column_B', 'Column_C']).map(c => `"${c}"`).join(' ');
     try {
-      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${DEFAULT_USER_DB}" create "${name}" ${cols}`, { encoding: 'utf8', timeout: 5000 });
+      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${dbPath}" create "${name}" ${cols}`, { encoding: 'utf8', timeout: 5000 });
       json(res, JSON.parse(result));
     } catch (e) { json(res, { error: e.message }, 500); }
     return;
@@ -2765,8 +2902,10 @@ const server = http.createServer(async (req, res) => {
 
   if (tableGetMatch && m === 'DELETE') {
     const table = decodeURIComponent(tableGetMatch[1]);
+    const dbPath = resolveDbPath(url);
+    if (isReadOnlyDb(dbPath)) { json(res, { error: 'Database is read-only' }, 403); return; }
     try {
-      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${DEFAULT_USER_DB}" drop "${table}"`, { encoding: 'utf8', timeout: 5000 });
+      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${dbPath}" drop "${table}"`, { encoding: 'utf8', timeout: 5000 });
       json(res, JSON.parse(result));
     } catch (e) { json(res, { error: e.message }, 500); }
     return;
@@ -2814,6 +2953,65 @@ const server = http.createServer(async (req, res) => {
     if (!body.table || !body.column) { json(res, { error: 'Missing table or column' }, 400); return; }
     try {
       const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${DEFAULT_USER_DB}" add-col "${body.table}" "${body.column}"`, { encoding: 'utf8', timeout: 5000 });
+      json(res, JSON.parse(result));
+    } catch (e) { json(res, { error: e.message }, 500); }
+    return;
+  }
+
+  // Insert a row with data
+  if (p === '/api/database/insert' && m === 'POST') {
+    const body = await parseBody(req);
+    const { table, data, db } = body;
+    if (!table || !data) { json(res, { error: 'Missing table or data' }, 400); return; }
+    const dbPath = db ? path.join(OUTPUT_DIR_SS, path.basename(db)) : DEFAULT_USER_DB;
+    if (isReadOnlyDb(dbPath)) { json(res, { error: 'Database is read-only' }, 403); return; }
+    try {
+      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${dbPath}" insert "${table}"`, { input: JSON.stringify(data), encoding: 'utf8', timeout: 5000 });
+      json(res, JSON.parse(result));
+    } catch (e) { json(res, { error: e.message }, 500); }
+    return;
+  }
+
+  // Update a row by primary key id
+  if (p === '/api/database/update-row' && m === 'POST') {
+    const body = await parseBody(req);
+    const { table, id: rowId, data, db } = body;
+    if (!table || !rowId || !data) { json(res, { error: 'Missing table, id, or data' }, 400); return; }
+    const dbPath = db ? path.join(OUTPUT_DIR_SS, path.basename(db)) : DEFAULT_USER_DB;
+    if (isReadOnlyDb(dbPath)) { json(res, { error: 'Database is read-only' }, 403); return; }
+    try {
+      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${dbPath}" update-row "${table}" "${rowId}"`, { input: JSON.stringify(data), encoding: 'utf8', timeout: 5000 });
+      json(res, JSON.parse(result));
+    } catch (e) { json(res, { error: e.message }, 500); }
+    return;
+  }
+
+  // Delete a row by primary key id
+  if (p === '/api/database/delete-by-id' && m === 'POST') {
+    const body = await parseBody(req);
+    const { table, id: rowId, db } = body;
+    if (!table || !rowId) { json(res, { error: 'Missing table or id' }, 400); return; }
+    const dbPath = db ? path.join(OUTPUT_DIR_SS, path.basename(db)) : DEFAULT_USER_DB;
+    if (isReadOnlyDb(dbPath)) { json(res, { error: 'Database is read-only' }, 403); return; }
+    try {
+      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${dbPath}" delete-by-id "${table}" "${rowId}"`, { encoding: 'utf8', timeout: 5000 });
+      json(res, JSON.parse(result));
+    } catch (e) { json(res, { error: e.message }, 500); }
+    return;
+  }
+
+  // Create a new empty database
+  if (p === '/api/database/create' && m === 'POST') {
+    const body = await parseBody(req);
+    const { name } = body;
+    if (!name) { json(res, { error: 'Missing database name' }, 400); return; }
+    const sanitized = path.basename(name).replace(/[^a-zA-Z0-9_-]/g, '');
+    const dbName = sanitized.endsWith('.db') ? sanitized : sanitized + '.db';
+    if (dbName === 'jubilee.db') { json(res, { error: 'Cannot overwrite jubilee.db' }, 403); return; }
+    if (!fs.existsSync(OUTPUT_DIR_SS)) fs.mkdirSync(OUTPUT_DIR_SS, { recursive: true });
+    const dbPath = path.join(OUTPUT_DIR_SS, dbName);
+    try {
+      const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${dbPath}" create-db`, { encoding: 'utf8', timeout: 5000 });
       json(res, JSON.parse(result));
     } catch (e) { json(res, { error: e.message }, 500); }
     return;
@@ -3040,6 +3238,78 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- System file browser (browse from filesystem root) ---
+  if (p === '/api/system-browse' && m === 'GET') {
+    const dirPath = url.searchParams.get('path') || '/';
+    // Resolve to absolute — prevent relative tricks
+    const absDir = path.resolve(dirPath);
+    if (!fs.existsSync(absDir)) { json(res, { error: 'Directory not found' }, 404); return; }
+    const stat = fs.statSync(absDir);
+    if (!stat.isDirectory()) { json(res, { error: 'Not a directory' }, 400); return; }
+    try {
+      const entries = fs.readdirSync(absDir, { withFileTypes: true });
+      const items = [];
+      for (const e of entries) {
+        if (e.name.startsWith('.') && absDir === '/') continue; // hide dotfiles at root
+        try {
+          const fullPath = path.join(absDir, e.name);
+          const s = fs.statSync(fullPath);
+          items.push({
+            name: e.name,
+            path: fullPath,
+            isDir: s.isDirectory(),
+            size: s.isDirectory() ? null : s.size,
+            modified: s.mtime.toISOString(),
+          });
+        } catch {}
+      }
+      // Sort: dirs first, then alpha
+      items.sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      json(res, { data: { path: absDir, parent: absDir === '/' ? null : path.dirname(absDir), items } });
+    } catch (e) {
+      json(res, { error: `Cannot read directory: ${e.message}` }, 403);
+    }
+    return;
+  }
+
+  // --- Read a system file by absolute path (for system browser viewer) ---
+  if (p === '/api/system-file' && m === 'GET') {
+    const filePath = url.searchParams.get('path');
+    if (!filePath) { json(res, { error: 'Missing path' }, 400); return; }
+    const absPath = path.resolve(filePath);
+    if (!fs.existsSync(absPath)) { json(res, { error: 'File not found' }, 404); return; }
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) { json(res, { error: 'Path is a directory' }, 400); return; }
+    // Size limit: 5MB
+    if (stat.size > 5 * 1024 * 1024) { json(res, { error: 'File too large (>5MB)' }, 400); return; }
+    const ext = path.extname(absPath).toLowerCase();
+    const name = path.basename(absPath);
+    try {
+      if (ext === '.csv') {
+        const rows = loadCSV(absPath);
+        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+        json(res, { data: { type: 'csv', name, path: absPath, headers, rows, isSystemFile: true } });
+      } else if (ext === '.xlsx') {
+        const xlsxReader = path.join(__dirname, 'xlsx_reader.py');
+        const result = require('node:child_process').execSync(`python3 "${xlsxReader}" "${absPath}"`, { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 15000 });
+        const parsed = JSON.parse(result);
+        json(res, { data: { type: 'xlsx', name, path: absPath, sheets: parsed.sheets, isSystemFile: true } });
+      } else if (['.md', '.txt', '.py', '.sh', '.js', '.json', '.yml', '.yaml', '.cfg', '.ini', '.env', '.html', '.css', '.ts', '.tsx', '.jsx', '.go', '.rs', '.rb', '.php', '.sql', '.xml', '.toml', '.log', ''].includes(ext) || name.startsWith('.')) {
+        const type = ext === '.json' ? 'json' : ext === '.md' ? 'md' : 'text';
+        const content = fs.readFileSync(absPath, 'utf8');
+        json(res, { data: { type, name, path: absPath, content, isSystemFile: true } });
+      } else {
+        json(res, { error: `Unsupported file type: ${ext || '(none)'}` }, 400);
+      }
+    } catch (e) {
+      json(res, { error: `Cannot read file: ${e.message}` }, 500);
+    }
+    return;
+  }
+
   // --- SQL query endpoint ---
   if (p === '/api/sql' && m === 'POST') {
     const body = await parseBody(req);
@@ -3098,6 +3368,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- KB folder management ---
+  if (p === '/api/kb/folders' && m === 'GET') {
+    const kbRoot = path.join(ROOT, 'kb');
+    try {
+      if (!fs.existsSync(kbRoot)) fs.mkdirSync(kbRoot, { recursive: true });
+      const entries = fs.readdirSync(kbRoot, { withFileTypes: true });
+      const folders = entries.filter(e => e.isDirectory() && e.name !== 'sessions').map(e => e.name).sort();
+      json(res, { data: folders });
+    } catch (e) { json(res, { data: [] }); }
+    return;
+  }
+
+  if (p === '/api/kb/folders' && m === 'POST') {
+    const body = await parseBody(req);
+    const { name } = body;
+    if (!name) { json(res, { error: 'Missing folder name' }, 400); return; }
+    const sanitized = name.replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+    if (!sanitized) { json(res, { error: 'Invalid folder name' }, 400); return; }
+    const folderPath = path.join(ROOT, 'kb', sanitized);
+    fs.mkdirSync(folderPath, { recursive: true });
+    json(res, { data: { name: sanitized, path: `kb/${sanitized}` } });
+    return;
+  }
+
   // --- Export session (markdown, JSON, or KB article) ---
   const exportMatch = p.match(/^\/api\/sessions\/([^/]+)\/export$/);
   if (exportMatch && m === 'POST') {
@@ -3137,14 +3431,26 @@ const server = http.createServer(async (req, res) => {
       // Save as KB article with AI-generated metadata
       const meta = generateMetadata(session, messages);
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
-      const filename = `${dateStr}-${slug}.md`;
-      const kbDir = path.join(ROOT, 'kb', 'analysis');
+      let filename = `${dateStr}-${slug}.md`;
+      const kbFolder = (body.kbFolder || 'analysis').replace(/[^a-zA-Z0-9_-]/g, '-');
+      const kbDir = path.join(ROOT, 'kb', kbFolder);
       fs.mkdirSync(kbDir, { recursive: true });
-      const article = `---\ntitle: "${meta.title || title}"\ndate: ${dateStr}\nsession_id: ${sessionId}\ntags: [${meta.tags || ''}]\nsummary: "${(meta.summary || '').replace(/"/g, '\\"')}"\n---\n\n${mdContent}`;
+      // If file already exists, append version number to create a new one
+      let version = 1;
+      let updated = false;
+      const baseName = `${dateStr}-${slug}`;
+      if (fs.existsSync(path.join(kbDir, filename))) {
+        // Find next available version
+        version = 2;
+        while (fs.existsSync(path.join(kbDir, `${baseName}-v${version}.md`))) version++;
+        filename = `${baseName}-v${version}.md`;
+        updated = true;
+      }
+      const article = `---\ntitle: "${meta.title || title}"\ndate: ${dateStr}\nsession_id: ${sessionId}\ntags: [${meta.tags || ''}]\nsummary: "${(meta.summary || '').replace(/"/g, '\\"')}"\nexport_version: ${version}\n---\n\n${mdContent}`;
       fs.writeFileSync(path.join(kbDir, filename), article);
-      auditLog('export_kb_article', { sessionId, filename });
-      log(`KB article exported: ${filename}`);
-      json(res, { data: { content: article, filename, path: `kb/analysis/${filename}`, format: 'kb-article' } });
+      auditLog('export_kb_article', { sessionId, filename, version, folder: kbFolder });
+      log(`KB article exported: kb/${kbFolder}/${filename}${updated ? ` (version ${version})` : ''}`);
+      json(res, { data: { content: article, filename, path: `kb/${kbFolder}/${filename}`, format: 'kb-article', version, updated, folder: kbFolder } });
       return;
     }
 

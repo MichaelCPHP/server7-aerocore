@@ -1,489 +1,389 @@
 #!/usr/bin/env python3
-"""SQLite database operations — import xlsx, read/write tables.
+"""Database manager for the Lab Database pane.
+
+Provides CRUD operations on SQLite databases via CLI commands.
+Called by server.js for all database pane interactions.
 
 Usage:
-    python3 database_manager.py <db_path> list
-    python3 database_manager.py <db_path> get <table> [limit] [offset]
-    python3 database_manager.py <db_path> update <table> <row_id> <column> <value>
-    python3 database_manager.py <db_path> create <table> <col1> <col2> ...
-    python3 database_manager.py <db_path> drop <table>
-    python3 database_manager.py <db_path> import <xlsx_path>
-    python3 database_manager.py <db_path> add-row <table>
-    python3 database_manager.py <db_path> delete-row <table> <row_id>
-    python3 database_manager.py <db_path> add-col <table> <col_name>
-    python3 database_manager.py <db_path> query <SELECT ...>
-    python3 database_manager.py <db_path> export <table>
+    python3 database_manager.py <db_path> <command> [args...]
 
-All output is JSON to stdout (except export, which outputs CSV).
+Commands:
+    list                          - List all tables with row counts and columns
+    get <table> [limit] [offset]  - Get table data with pagination
+    create <table> <col1> <col2>  - Create a new table with columns
+    drop <table>                  - Drop a table
+    update <table> <rowid> <col> <val> - Update a cell
+    add-row <table>               - Add an empty row
+    delete-row <table> <rowid>    - Delete a row
+    add-col <table> <column>      - Add a column
+    import <xlsx_or_csv_path>     - Import XLSX or CSV file
+    query                         - Execute a SELECT query (read from stdin)
+    export <table>                - Export table as CSV
+    create-db                     - Create an empty database file
+    import-csv <table> <csv_path> - Import CSV into a specific table
 """
-import json, os, re, sqlite3, sys, zipfile, xml.etree.ElementTree as ET
+
+import csv
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
 
 
 def connect(db_path):
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
 def list_tables(db_path):
     conn = connect(db_path)
-    tables = []
-    for (name,) in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type IN ('table','view') "
-        "AND name NOT LIKE 'sqlite_%' ORDER BY type, name"
-    ).fetchall():
-        kind = conn.execute(
-            "SELECT type FROM sqlite_master WHERE name=?", (name,)
-        ).fetchone()[0]
-        cols = conn.execute(f'PRAGMA table_info("{name}")').fetchall()
+    tables = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '_meta' ORDER BY name"
+    ).fetchall()
+    result = []
+    for (name,) in tables:
         row_count = conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
-        tables.append({
-            'name': name,
-            'type': kind,
-            'columns': [{'name': c[1], 'type': c[2]} for c in cols],
-            'columnCount': len(cols),
-            'rowCount': row_count,
+        cols = conn.execute(f'PRAGMA table_info("{name}")').fetchall()
+        result.append({
+            "name": name,
+            "rowCount": row_count,
+            "columnCount": len(cols),
+            "columns": [{"name": c[1], "type": c[2]} for c in cols],
         })
     conn.close()
-    return tables
+    return result
 
 
-def get_table(db_path, table_name, limit=500, offset=0):
+def get_table(db_path, table, limit=500, offset=0):
     conn = connect(db_path)
-    # Validate table exists
-    exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE name=? AND type IN ('table','view')", (table_name,)
-    ).fetchone()
-    if not exists:
-        conn.close()
-        return {'error': f'Table not found: {table_name}'}
+    conn.row_factory = sqlite3.Row
 
-    is_view = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE name=? AND type='view'", (table_name,)
-    ).fetchone() is not None
+    # Get column info
+    cols = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+    columns = [{"name": c[1], "type": c[2]} for c in cols]
 
-    cols = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
-    headers = [c[1] for c in cols]
-    col_types = [c[2] for c in cols]
-    total = conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
+    # Get total count
+    total = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
 
-    if is_view:
-        rows = conn.execute(
-            f'SELECT * FROM "{table_name}" LIMIT ? OFFSET ?', (limit, offset)
-        ).fetchall()
-        data = []
-        for i, row in enumerate(rows):
-            row_dict = {'_rowid': offset + i + 1}  # synthetic rowid, view is read-only
-            for j, h in enumerate(headers):
-                row_dict[h] = row[j]
-            data.append(row_dict)
-    else:
-        rows = conn.execute(
-            f'SELECT rowid, * FROM "{table_name}" LIMIT ? OFFSET ?', (limit, offset)
-        ).fetchall()
-        data = []
-        for row in rows:
-            row_dict = {'_rowid': row[0]}
-            for i, h in enumerate(headers):
-                row_dict[h] = row[i + 1]
-            data.append(row_dict)
+    # Get rows with rowid
+    rows = conn.execute(
+        f'SELECT rowid, * FROM "{table}" LIMIT ? OFFSET ?', (int(limit), int(offset))
+    ).fetchall()
+
+    data = []
+    for row in rows:
+        d = {"_rowid": row[0]}
+        for i, col in enumerate(columns):
+            d[col["name"]] = row[i + 1]
+        data.append(d)
 
     conn.close()
-    return {
-        'name': table_name,
-        'headers': headers,
-        'columnTypes': col_types,
-        'rows': data,
-        'totalRows': total,
-        'limit': limit,
-        'offset': offset,
-    }
+    headers = [c["name"] for c in columns]
+    return {"table": table, "columns": columns, "headers": headers, "rows": data, "total": total, "limit": int(limit), "offset": int(offset)}
 
 
-def update_cell(db_path, table_name, row_id, column, value):
+def create_table(db_path, table, columns):
     conn = connect(db_path)
-    # Check if it's a view
-    kind = conn.execute(
-        "SELECT type FROM sqlite_master WHERE name=?", (table_name,)
-    ).fetchone()
-    if not kind:
-        conn.close()
-        return {'error': f'Table not found: {table_name}'}
-    if kind[0] == 'view':
-        conn.close()
-        return {'error': 'Cannot edit a view — it is a computed sheet'}
-
-    # Validate column exists
-    cols = [c[1] for c in conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()]
-    if column not in cols:
-        conn.close()
-        return {'error': f'Column not found: {column}'}
-
-    # Try numeric conversion
-    try:
-        if value and '.' in str(value):
-            value = float(value)
-        elif value and str(value).lstrip('-').isdigit():
-            value = int(value)
-    except (ValueError, TypeError):
-        pass
-
-    conn.execute(f'UPDATE "{table_name}" SET "{column}" = ? WHERE rowid = ?', (value, row_id))
-    conn.commit()
-    conn.close()
-    return {'ok': True, 'table': table_name, 'rowid': row_id, 'column': column, 'value': value}
-
-
-def create_table(db_path, table_name, columns):
-    conn = connect(db_path)
-    # Sanitize table name
-    safe_name = re.sub(r'[^\w\s-]', '', table_name).strip().replace(' ', '_')
-    if not safe_name:
-        conn.close()
-        return {'error': 'Invalid table name'}
-
-    col_defs = ['id INTEGER PRIMARY KEY AUTOINCREMENT']
+    col_defs = ["id INTEGER PRIMARY KEY AUTOINCREMENT"]
     for col in columns:
-        safe_col = re.sub(r'[^\w\s-]', '', col).strip().replace(' ', '_')
-        if safe_col and safe_col.lower() != 'id':
-            col_defs.append(f'"{safe_col}" TEXT')
-
-    conn.execute(f'CREATE TABLE IF NOT EXISTS "{safe_name}" ({", ".join(col_defs)})')
+        clean = col.strip('"').strip("'")
+        col_defs.append(f'"{clean}" TEXT')
+    conn.execute(f'CREATE TABLE IF NOT EXISTS "{table}" ({", ".join(col_defs)})')
     conn.commit()
     conn.close()
-    return {'ok': True, 'table': safe_name, 'columns': len(col_defs)}
+    return {"success": True, "table": table, "columns": columns}
 
 
-def drop_table(db_path, table_name):
+def drop_table(db_path, table):
     conn = connect(db_path)
-    kind = conn.execute(
-        "SELECT type FROM sqlite_master WHERE name=?", (table_name,)
-    ).fetchone()
-    if not kind:
-        conn.close()
-        return {'error': f'Table not found: {table_name}'}
+    conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+    conn.commit()
+    conn.close()
+    return {"success": True, "dropped": table}
 
-    if kind[0] == 'view':
-        conn.execute(f'DROP VIEW IF EXISTS "{table_name}"')
+
+def update_cell(db_path, table, rowid, column, value):
+    conn = connect(db_path)
+    conn.execute(f'UPDATE "{table}" SET "{column}" = ? WHERE rowid = ?', (value, int(rowid)))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+def add_row(db_path, table):
+    conn = connect(db_path)
+    cols = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+    non_id_cols = [c for c in cols if c[1].lower() != "id"]
+    if non_id_cols:
+        col_names = ", ".join([f'"{c[1]}"' for c in non_id_cols])
+        placeholders = ", ".join(["NULL"] * len(non_id_cols))
+        conn.execute(f'INSERT INTO "{table}" ({col_names}) VALUES ({placeholders})')
     else:
-        conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+        conn.execute(f'INSERT INTO "{table}" DEFAULT VALUES')
+    conn.commit()
+    rowid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"success": True, "rowid": rowid}
+
+
+def delete_row(db_path, table, rowid):
+    conn = connect(db_path)
+    conn.execute(f'DELETE FROM "{table}" WHERE rowid = ?', (int(rowid),))
     conn.commit()
     conn.close()
-    return {'ok': True, 'dropped': table_name}
+    return {"success": True}
 
 
-def add_row(db_path, table_name):
+def add_column(db_path, table, column):
     conn = connect(db_path)
-    kind = conn.execute(
-        "SELECT type FROM sqlite_master WHERE name=?", (table_name,)
-    ).fetchone()
-    if not kind or kind[0] == 'view':
-        conn.close()
-        return {'error': 'Cannot add rows to a view'}
-
-    cols = [c[1] for c in conn.execute(f'PRAGMA table_info("{table_name}")').fetchall() if c[1] != 'id']
-    if not cols:
-        conn.close()
-        return {'error': 'Table has no columns'}
-
-    placeholders = ', '.join(['NULL'] * len(cols))
-    col_names = ', '.join([f'"{c}"' for c in cols])
-    cursor = conn.execute(f'INSERT INTO "{table_name}" ({col_names}) VALUES ({placeholders})')
-    conn.commit()
-    row_id = cursor.lastrowid
-    conn.close()
-    return {'ok': True, 'table': table_name, 'rowid': row_id}
-
-
-def delete_row(db_path, table_name, row_id):
-    conn = connect(db_path)
-    conn.execute(f'DELETE FROM "{table_name}" WHERE rowid = ?', (row_id,))
+    conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" TEXT')
     conn.commit()
     conn.close()
-    return {'ok': True, 'table': table_name, 'deleted': row_id}
+    return {"success": True, "column": column}
 
-
-def add_column(db_path, table_name, col_name):
-    conn = connect(db_path)
-    safe_col = re.sub(r'[^\w\s-]', '', col_name).strip().replace(' ', '_')
-    if not safe_col:
-        conn.close()
-        return {'error': 'Invalid column name'}
-    conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{safe_col}" TEXT')
-    conn.commit()
-    conn.close()
-    return {'ok': True, 'table': table_name, 'column': safe_col}
-
-
-# ── xlsx import ──────────────────────────────────────────────────────────────
-
-def col_to_num(col):
-    n = 0
-    for c in col:
-        n = n * 26 + (ord(c.upper()) - 64)
-    return n - 1
-
-
-def num_to_col(n):
-    s = ''
-    while n >= 0:
-        s = chr(65 + n % 26) + s
-        n = n // 26 - 1
-    return s
-
-
-def import_xlsx(xlsx_path, db_path):
-    z = zipfile.ZipFile(xlsx_path)
-
-    def ns(tag):
-        m = re.match(r'\{(.+?)\}', tag)
-        return m.group(1) if m else ''
-
-    # Sheet names
-    wb = ET.parse(z.open('xl/workbook.xml')).getroot()
-    wns = ns(wb.tag)
-    sheet_names = [s.get('name') for s in wb.findall(f'{{{wns}}}sheets/{{{wns}}}sheet')]
-
-    # Shared strings
-    ss = []
-    try:
-        ss_xml = ET.parse(z.open('xl/sharedStrings.xml')).getroot()
-        sns = ns(ss_xml.tag)
-        for si in ss_xml.findall(f'{{{sns}}}si'):
-            texts = si.findall(f'.//{{{sns}}}t')
-            ss.append(''.join(t.text or '' for t in texts))
-    except (KeyError, ET.ParseError):
-        pass
-
-    # Relationships
-    rels = {}
-    try:
-        rels_xml = ET.parse(z.open('xl/_rels/workbook.xml.rels')).getroot()
-        for rel in rels_xml:
-            rid = rel.get('Id', '')
-            target = rel.get('Target', '')
-            if 'worksheet' in target.lower():
-                rels[rid] = 'xl/' + target if not target.startswith('/') else target.lstrip('/')
-    except (KeyError, ET.ParseError):
-        pass
-
-    # Get rIds
-    ns_rels = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
-    sheet_rids = []
-    for s in wb.findall(f'{{{wns}}}sheets/{{{wns}}}sheet'):
-        rid = ''
-        for attr_name, attr_val in s.attrib.items():
-            if attr_name.endswith('}id') or attr_name == 'r:id':
-                rid = attr_val
-                break
-        sheet_rids.append(rid)
-
-    conn = connect(db_path)
-    imported = []
-
-    for i, sheet_name in enumerate(sheet_names):
-        safe_name = re.sub(r'[^\w\s-]', '', sheet_name).strip().replace(' ', '_')
-        if not safe_name:
-            safe_name = f'Sheet_{i+1}'
-
-        try:
-            # Find sheet file
-            sheet_file = None
-            if i < len(sheet_rids) and sheet_rids[i] in rels:
-                sheet_file = rels[sheet_rids[i]]
-            if not sheet_file:
-                for candidate in [f'xl/worksheets/sheet{i+1}.xml']:
-                    if candidate in z.namelist():
-                        sheet_file = candidate
-                        break
-            if not sheet_file:
-                continue
-
-            ws = ET.parse(z.open(sheet_file)).getroot()
-            wns2 = ns(ws.tag)
-            rows_data = []
-            max_col = 0
-
-            for row in ws.findall(f'.//{{{wns2}}}row'):
-                cells = {}
-                for cell in row.findall(f'{{{wns2}}}c'):
-                    ref = cell.get('r', '')
-                    col_letter = re.sub(r'[0-9]', '', ref)
-                    col_idx = col_to_num(col_letter)
-                    if col_idx > max_col:
-                        max_col = col_idx
-
-                    val_el = cell.find(f'{{{wns2}}}v')
-                    val = val_el.text if val_el is not None else ''
-                    cell_type = cell.get('t', '')
-                    if cell_type == 's' and val:
-                        idx = int(val)
-                        val = ss[idx] if idx < len(ss) else val
-                    elif cell_type == 'inlineStr':
-                        is_el = cell.find(f'.//{{{wns2}}}t')
-                        val = is_el.text if is_el is not None else ''
-                    cells[col_idx] = val or ''
-
-                if cells:
-                    rows_data.append(cells)
-
-            if not rows_data:
-                continue
-
-            # Detect headers from first row
-            all_cols = list(range(max_col + 1))
-            first_row = rows_data[0]
-            headers = []
-            for c in all_cols:
-                val = first_row.get(c, '').strip()
-                if val:
-                    headers.append(re.sub(r'[^\w\s-]', '', val).strip().replace(' ', '_') or f'col_{num_to_col(c)}')
-                else:
-                    headers.append(f'col_{num_to_col(c)}')
-
-            # Deduplicate headers
-            seen = {}
-            unique_headers = []
-            for h in headers:
-                if h in seen:
-                    seen[h] += 1
-                    unique_headers.append(f'{h}_{seen[h]}')
-                else:
-                    seen[h] = 0
-                    unique_headers.append(h)
-
-            # Create table
-            conn.execute(f'DROP TABLE IF EXISTS "{safe_name}"')
-            col_defs = 'id INTEGER PRIMARY KEY AUTOINCREMENT, ' + ', '.join(
-                [f'"{h}" TEXT' for h in unique_headers]
-            )
-            conn.execute(f'CREATE TABLE "{safe_name}" ({col_defs})')
-
-            # Insert data rows (skip header row)
-            data_rows = rows_data[1:]
-            if data_rows:
-                placeholders = ', '.join(['?'] * len(unique_headers))
-                col_names = ', '.join([f'"{h}"' for h in unique_headers])
-                batch = []
-                for r in data_rows:
-                    vals = [r.get(c, '') for c in all_cols]
-                    batch.append(vals)
-                conn.executemany(
-                    f'INSERT INTO "{safe_name}" ({col_names}) VALUES ({placeholders})',
-                    batch
-                )
-
-            imported.append({
-                'name': safe_name,
-                'originalName': sheet_name,
-                'columns': len(unique_headers),
-                'rows': len(data_rows),
-            })
-
-        except Exception as e:
-            imported.append({
-                'name': safe_name,
-                'originalName': sheet_name,
-                'error': str(e),
-            })
-
-    conn.commit()
-    conn.close()
-    return {'ok': True, 'tables': imported, 'total': len(imported)}
-
-
-# ── CSV export ───────────────────────────────────────────────────────────────
-
-def export_csv(db_path, table_name):
-    import csv, io
-    conn = connect(db_path)
-    exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE name=? AND type IN ('table','view')", (table_name,)
-    ).fetchone()
-    if not exists:
-        conn.close()
-        return None  # caller handles error
-    cols = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
-    headers = [c[1] for c in cols]
-    rows = conn.execute(f'SELECT * FROM "{table_name}"').fetchall()
-    conn.close()
-    out = io.StringIO()
-    writer = csv.writer(out)
-    writer.writerow(headers)
-    writer.writerows(rows)
-    return out.getvalue()
-
-
-# ── SQL query (read-only) ────────────────────────────────────────────────────
 
 def run_query(db_path, sql):
-    # Only allow SELECT statements
-    stripped = sql.strip().rstrip(';').strip()
-    first_word = stripped.split()[0].upper() if stripped.split() else ''
-    if first_word != 'SELECT':
-        return {'error': f'Only SELECT queries are allowed (got {first_word})'}
     conn = connect(db_path)
-    try:
-        cursor = conn.execute(stripped)
-        headers = [desc[0] for desc in cursor.description] if cursor.description else []
-        rows = cursor.fetchall()
-        data = []
-        for row in rows:
-            row_dict = {}
-            for i, h in enumerate(headers):
-                row_dict[h] = row[i]
-            data.append(row_dict)
-        return {'headers': headers, 'rows': data, 'totalRows': len(data)}
-    except Exception as e:
-        return {'error': str(e)}
-    finally:
+    conn.row_factory = sqlite3.Row
+    cursor = conn.execute(sql)
+    rows = cursor.fetchall()
+    if not rows:
         conn.close()
+        return {"columns": [], "rows": [], "count": 0}
+    columns = list(rows[0].keys())
+    data = [dict(row) for row in rows]
+    conn.close()
+    return {"columns": columns, "rows": data, "count": len(data)}
 
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
+def export_table(db_path, table):
+    conn = connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cols = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+    col_names = [c[1] for c in cols]
+    rows = conn.execute(f'SELECT * FROM "{table}"').fetchall()
+    conn.close()
 
-if __name__ == '__main__':
+    import io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(col_names)
+    for row in rows:
+        writer.writerow([row[c] for c in col_names])
+    return output.getvalue()
+
+
+def import_xlsx(db_path, xlsx_path):
+    """Import XLSX file — delegates to xlsx_reader.py if available."""
+    script_dir = Path(__file__).parent
+    xlsx_reader = script_dir / "xlsx_reader.py"
+    if xlsx_reader.exists():
+        import subprocess
+        result = subprocess.run(
+            ["python3", str(xlsx_reader), xlsx_path, db_path],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            return {"success": True, "message": result.stdout.strip()}
+        return {"error": result.stderr.strip()}
+    return {"error": "xlsx_reader.py not found"}
+
+
+def import_csv_file(db_path, table, csv_path):
+    """Import a CSV file into a specific table."""
+    conn = connect(db_path)
+
+    with open(csv_path, newline="", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        headers = reader.fieldnames
+        if not headers:
+            conn.close()
+            return {"error": "CSV has no headers"}
+
+        # Clean column names
+        clean_headers = [h.strip().replace(" ", "_").replace("-", "_") for h in headers]
+
+        # Create table — use existing 'id' column as primary key if present
+        has_id = "id" in clean_headers
+        col_defs = []
+        if not has_id:
+            col_defs.append("id INTEGER PRIMARY KEY AUTOINCREMENT")
+        for ch in clean_headers:
+            if ch == "id":
+                col_defs.append('"id" TEXT PRIMARY KEY')
+            else:
+                col_defs.append(f'"{ch}" TEXT')
+        conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+        conn.execute(f'CREATE TABLE "{table}" ({", ".join(col_defs)})')
+
+        # Insert rows in batches
+        placeholders = ", ".join(["?"] * len(clean_headers))
+        col_names = ", ".join([f'"{h}"' for h in clean_headers])
+        sql = f'INSERT INTO "{table}" ({col_names}) VALUES ({placeholders})'
+
+        batch = []
+        total = 0
+        for row in reader:
+            values = [row.get(h, "") or None for h in headers]
+            batch.append(values)
+            if len(batch) >= 5000:
+                conn.executemany(sql, batch)
+                total += len(batch)
+                batch = []
+        if batch:
+            conn.executemany(sql, batch)
+            total += len(batch)
+
+        conn.commit()
+
+    # Create indexes on common filter columns
+    index_candidates = ["segment", "source", "stage_id", "location", "county", "city", "company", "phone", "email"]
+    actual_cols = {h for h in clean_headers}
+    for col in index_candidates:
+        if col in actual_cols:
+            try:
+                conn.execute(f'CREATE INDEX IF NOT EXISTS "idx_{table}_{col}" ON "{table}"("{col}")')
+            except sqlite3.Error:
+                pass
+    conn.commit()
+    conn.close()
+    return {"success": True, "table": table, "rows": total, "columns": len(clean_headers)}
+
+
+def insert_row(db_path, table, data):
+    """Insert a row with data (dict)."""
+    conn = connect(db_path)
+    cols = [k for k in data.keys()]
+    vals = [data[k] for k in cols]
+    col_names = ", ".join([f'"{c}"' for c in cols])
+    placeholders = ", ".join(["?"] * len(cols))
+    conn.execute(f'INSERT INTO "{table}" ({col_names}) VALUES ({placeholders})', vals)
+    conn.commit()
+    rowid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"success": True, "rowid": rowid}
+
+
+def update_row(db_path, table, row_id, data):
+    """Update multiple columns in a row by primary key."""
+    conn = connect(db_path)
+    sets = ", ".join([f'"{k}" = ?' for k in data.keys()])
+    vals = list(data.values()) + [row_id]
+    conn.execute(f'UPDATE "{table}" SET {sets} WHERE id = ?', vals)
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+def delete_by_id(db_path, table, row_id):
+    """Delete a row by primary key id."""
+    conn = connect(db_path)
+    conn.execute(f'DELETE FROM "{table}" WHERE id = ?', (row_id,))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+def create_empty_db(db_path):
+    """Create an empty database file."""
+    conn = connect(db_path)
+    conn.execute("CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT OR REPLACE INTO _meta VALUES ('created', datetime('now'))")
+    conn.commit()
+    conn.close()
+    return {"success": True, "path": db_path}
+
+
+def import_file(db_path, file_path):
+    """Import a file (CSV or XLSX) into the database."""
+    ext = Path(file_path).suffix.lower()
+    if ext == ".csv":
+        table = Path(file_path).stem.replace("-", "_").replace(" ", "_")
+        return import_csv_file(db_path, table, file_path)
+    elif ext in (".xlsx", ".xls"):
+        return import_xlsx(db_path, file_path)
+    else:
+        return {"error": f"Unsupported file type: {ext}"}
+
+
+if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print(__doc__, file=sys.stderr)
+        print(json.dumps({"error": "Usage: database_manager.py <db_path> <command> [args...]"}))
         sys.exit(1)
 
-    db = sys.argv[1]
-    cmd = sys.argv[2]
+    db_path = sys.argv[1]
+    command = sys.argv[2]
 
-    if cmd == 'list':
-        result = list_tables(db)
-    elif cmd == 'get':
-        table = sys.argv[3] if len(sys.argv) > 3 else ''
-        limit = int(sys.argv[4]) if len(sys.argv) > 4 else 500
-        offset = int(sys.argv[5]) if len(sys.argv) > 5 else 0
-        result = get_table(db, table, limit, offset)
-    elif cmd == 'update':
-        result = update_cell(db, sys.argv[3], int(sys.argv[4]), sys.argv[5], sys.argv[6])
-    elif cmd == 'create':
-        result = create_table(db, sys.argv[3], sys.argv[4:])
-    elif cmd == 'drop':
-        result = drop_table(db, sys.argv[3])
-    elif cmd == 'import':
-        result = import_xlsx(sys.argv[3], db)
-    elif cmd == 'add-row':
-        result = add_row(db, sys.argv[3])
-    elif cmd == 'delete-row':
-        result = delete_row(db, sys.argv[3], int(sys.argv[4]))
-    elif cmd == 'add-col':
-        result = add_column(db, sys.argv[3], sys.argv[4])
-    elif cmd == 'query':
-        # Read SQL from stdin to avoid shell injection
-        sql = sys.stdin.read().strip() if len(sys.argv) <= 3 else ' '.join(sys.argv[3:])
-        result = run_query(db, sql)
-    elif cmd == 'export':
-        csv_data = export_csv(db, sys.argv[3])
-        if csv_data is None:
-            result = {'error': f'Table not found: {sys.argv[3]}'}
-        else:
-            sys.stdout.write(csv_data)
+    try:
+        if command == "list":
+            result = list_tables(db_path)
+        elif command == "get":
+            table = sys.argv[3]
+            limit = sys.argv[4] if len(sys.argv) > 4 else 500
+            offset = sys.argv[5] if len(sys.argv) > 5 else 0
+            result = get_table(db_path, table, limit, offset)
+        elif command == "create":
+            table = sys.argv[3]
+            columns = sys.argv[4:]
+            result = create_table(db_path, table, columns)
+        elif command == "drop":
+            table = sys.argv[3]
+            result = drop_table(db_path, table)
+        elif command == "update":
+            table = sys.argv[3]
+            rowid = sys.argv[4]
+            column = sys.argv[5]
+            value = sys.argv[6] if len(sys.argv) > 6 else ""
+            result = update_cell(db_path, table, rowid, column, value)
+        elif command == "add-row":
+            table = sys.argv[3]
+            result = add_row(db_path, table)
+        elif command == "delete-row":
+            table = sys.argv[3]
+            rowid = sys.argv[4]
+            result = delete_row(db_path, table, rowid)
+        elif command == "add-col":
+            table = sys.argv[3]
+            column = sys.argv[4]
+            result = add_column(db_path, table, column)
+        elif command == "query":
+            sql = sys.stdin.read().strip()
+            result = run_query(db_path, sql)
+        elif command == "export":
+            table = sys.argv[3]
+            # Export returns raw CSV, not JSON
+            print(export_table(db_path, table), end="")
             sys.exit(0)
-    else:
-        result = {'error': f'Unknown command: {cmd}'}
+        elif command == "create-db":
+            result = create_empty_db(db_path)
+        elif command == "import":
+            file_path = sys.argv[3]
+            result = import_file(db_path, file_path)
+        elif command == "import-csv":
+            table = sys.argv[3]
+            csv_path = sys.argv[4]
+            result = import_csv_file(db_path, table, csv_path)
+        elif command == "insert":
+            table = sys.argv[3]
+            data = json.loads(sys.stdin.read().strip())
+            result = insert_row(db_path, table, data)
+        elif command == "update-row":
+            table = sys.argv[3]
+            row_id = sys.argv[4]
+            data = json.loads(sys.stdin.read().strip())
+            result = update_row(db_path, table, row_id, data)
+        elif command == "delete-by-id":
+            table = sys.argv[3]
+            row_id = sys.argv[4]
+            result = delete_by_id(db_path, table, row_id)
+        else:
+            result = {"error": f"Unknown command: {command}"}
 
-    json.dump(result, sys.stdout)
+        print(json.dumps(result))
+
+    except Exception as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
