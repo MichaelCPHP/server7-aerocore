@@ -133,7 +133,7 @@ img { max-width: 100%; height: auto; }
   align-items: center;
   justify-content: space-between;
   height: 64px;
-  gap: 24px;
+  gap: 16px;
 }
 
 .nav-logo {
@@ -170,16 +170,20 @@ img { max-width: 100%; height: auto; }
 
 .nav-links {
   display: flex;
+  align-items: center;
   list-style: none;
-  gap: 4px;
+  gap: 2px;
 }
 .nav-link {
-  padding: 8px 14px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-light);
   border-radius: var(--radius);
   transition: all var(--transition);
+  white-space: nowrap;
 }
 .nav-link:hover {
   color: var(--primary);
@@ -873,6 +877,8 @@ img { max-width: 100%; height: auto; }
    RESPONSIVE
    ============================================ */
 @media (max-width: 1024px) {
+  .nav-link { padding: 6px 8px; font-size: 12px; }
+  .nav-links { gap: 1px; }
   .materials-grid { grid-template-columns: repeat(2, 1fr); }
   .features-grid { grid-template-columns: repeat(2, 1fr); }
   .id-grid { grid-template-columns: repeat(2, 1fr); }
