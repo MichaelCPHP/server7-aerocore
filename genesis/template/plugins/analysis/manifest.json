@@ -1,0 +1,122 @@
+[
+  {
+    "name": "Remainder Scanner",
+    "file": "scripts/remainder_scan.py",
+    "description": "Find clusters of events sharing the same Jubilee remainder",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["convergence", "frequency", "complement_pairs"]
+  },
+  {
+    "name": "Convergence Analyzer",
+    "file": "scripts/convergence.py",
+    "description": "Test whether multiple independent calculations converge on the same dates",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["remainder_scan", "daniel_490"]
+  },
+  {
+    "name": "Frequency Acceleration",
+    "file": "scripts/frequency.py",
+    "description": "Measure how event density increases over time across the timeline",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["cycle_finder", "convergence"]
+  },
+  {
+    "name": "Cycle Finder",
+    "file": "scripts/cycle_finder.py",
+    "description": "Detect repeating patterns in event sequences",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["remainder_scan", "frequency"]
+  },
+  {
+    "name": "Daniel 490 Projection",
+    "file": "scripts/daniel_490.py",
+    "description": "Apply 490-year multiples from key anchors and find convergences",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["convergence", "anchor_dates"]
+  },
+  {
+    "name": "Anchor Dates",
+    "file": "scripts/anchor_dates.py",
+    "description": "Anchor Date Convergence Analysis across clock systems",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["daniel_490", "convergence"]
+  },
+  {
+    "name": "AM Milestones",
+    "file": "scripts/am_milestones.py",
+    "description": "Map events at each AM millennium boundary (1000, 2000, 3000...)",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["convergence"]
+  },
+  {
+    "name": "Complement Pairs",
+    "file": "scripts/complement_pairs.py",
+    "description": "Find events whose cosmic remainders sum to ~1.0 (paired opposites)",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["remainder_scan", "mirror_symmetry"]
+  },
+  {
+    "name": "Mirror Symmetry",
+    "file": "scripts/mirror_symmetry.py",
+    "description": "Test whether events mirror around a central point in the timeline",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["complement_pairs", "cycle_finder"]
+  },
+  {
+    "name": "Sabbatical Slots",
+    "file": "scripts/sabbatical_slots.py",
+    "description": "Map every event onto the 7-year Shemitah wheel position",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["remainder_scan"]
+  },
+  {
+    "name": "Gematria Analysis",
+    "file": "scripts/gematria.py",
+    "description": "Hebrew letter values, sacred numbers, and timeline intersections",
+    "input": "data/signatures.json",
+    "output": "stdout",
+    "chains_with": ["remainder_scan"]
+  },
+  {
+    "name": "Islamic Overlay",
+    "file": "scripts/islamic_overlay.py",
+    "description": "Overlay Islamic history events onto the cosmic Jubilee grid",
+    "input": "output/database.csv",
+    "output": "stdout",
+    "chains_with": ["convergence", "remainder_scan"]
+  },
+  {
+    "name": "Tag Analyzer",
+    "file": "scripts/tag_analyze.py",
+    "description": "Analyze tag relationships and find thematic clusters",
+    "input": "kb/",
+    "output": "stdout",
+    "chains_with": ["tag_index", "tag_enrich"]
+  },
+  {
+    "name": "Tag Enrichment",
+    "file": "scripts/tag_enrich.py",
+    "description": "Auto-enrich knowledge base articles with hierarchical tags",
+    "input": "kb/",
+    "output": "kb/ (modified files)",
+    "chains_with": ["tag_analyze", "tag_index"]
+  },
+  {
+    "name": "Tag Index Builder",
+    "file": "scripts/tag_index.py",
+    "description": "Build hierarchical tag index from all knowledge base articles",
+    "input": "kb/",
+    "output": "stdout",
+    "chains_with": ["tag_analyze", "tag_enrich"]
+  }
+]

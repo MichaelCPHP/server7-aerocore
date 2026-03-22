@@ -1,0 +1,18 @@
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+.Spotlight-V100/
+.fseventsd/
+.Trashes/
+.TemporaryItems/
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.local

@@ -1,0 +1,21 @@
+{
+  "name": "AeroCore",
+  "description": "AeroCore Material Recovery — scrap carbide, tungsten, aerospace alloys, and precision manufacturing surplus",
+  "icon": "\u2699",
+  "color": "#006657",
+  "port": 9210,
+  "model": "opus",
+  "role": "You are the AeroCore AI assistant — a business operations partner for AeroCore Material Recovery. You help manage the company's scrap carbide and aerospace materials purchasing business. You have full access to project files, scripts, and knowledge base.",
+  "plugins": [
+    "core/*"
+  ],
+  "skills": [
+    "core/*",
+    "utility/*"
+  ],
+  "apis": [],
+  "dataDir": "data",
+  "scriptsDir": "scripts",
+  "kbDir": "kb",
+  "outputDir": "output"
+}

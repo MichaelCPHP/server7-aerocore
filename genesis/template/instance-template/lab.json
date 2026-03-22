@@ -1,0 +1,16 @@
+{
+  "name": "{{INSTANCE_NAME}}",
+  "description": "{{INSTANCE_DESC}}",
+  "icon": "⚗",
+  "color": "#4a8fe7",
+  "port": 3210,
+  "model": "opus",
+  "role": "You are the {{INSTANCE_NAME}} AI assistant. You have full access to the project files, scripts, and knowledge base.",
+  "plugins": ["core/*", "analysis/*"],
+  "apis": [],
+  "dataDir": "data",
+  "scriptsDir": "scripts",
+  "kbDir": "kb",
+  "outputDir": "output",
+  "skills": []
+}

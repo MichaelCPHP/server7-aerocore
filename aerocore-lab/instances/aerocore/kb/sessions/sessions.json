@@ -1,0 +1,14 @@
+[
+  {
+    "id": "8d2f627f-85bd-4b74-98a1-cc04eeb89de1",
+    "claudeSessionId": null,
+    "title": "AeroCore — Main",
+    "model": "opus",
+    "createdAt": "2026-03-22T02:51:26.314Z",
+    "lastMessageAt": "2026-03-22T02:51:26.314Z",
+    "messageCount": 0,
+    "totalCost": 0,
+    "agentName": "AeroCore",
+    "isMain": true
+  }
+]

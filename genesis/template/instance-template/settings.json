@@ -1,0 +1,17 @@
+{
+  "enforcements": {
+    "auto-snapshot": true,
+    "schema-validation": true,
+    "circuit-breaker": true,
+    "duplicate-detection": true,
+    "audit-trail": true
+  },
+  "skills": {},
+  "frontend": {
+    "pages": {
+      "home": true
+    },
+    "theme": "dark-blue"
+  },
+  "plugins": ["core/*"]
+}

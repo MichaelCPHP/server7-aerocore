@@ -1,0 +1,15 @@
+{
+  "name": "aerocore",
+  "primary": "#006657",
+  "primaryDim": "#004d42",
+  "bg": "#ffffff",
+  "bg2": "#f8f9fa",
+  "bg3": "#e9ecef",
+  "border": "#dee2e6",
+  "text": "#1a1a2e",
+  "textMuted": "#6c757d",
+  "accent": "#006657",
+  "success": "#28a745",
+  "danger": "#dc3545",
+  "purple": "#6f42c1"
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "id": "aerocore-lab",
+    "name": "AeroCore Lab",
+    "description": "AeroCore Material Recovery — scrap carbide, tungsten, aerospace alloys",
+    "path": "aerocore-lab",
+    "icon": "\u2699",
+    "color": "#006657",
+    "instances": 1
+  }
+]

@@ -1,0 +1,317 @@
+{
+  "version": "1.0",
+  "categories": {
+    "core": "Built-in lab skills — pipeline, database, snapshots",
+    "genesis": "Genesis IDE platform management skills",
+    "deployment": "Multi-server deployment and management",
+    "content": "Content creation and publishing skills",
+    "analysis": "Analysis script runner",
+    "utility": "Utility skills — uploads, logs, help",
+    "agent": "Agent identity, memory, and self-awareness skills"
+  },
+  "skills": [
+    {
+      "command": "rebuild",
+      "name": "Rebuild All",
+      "category": "core",
+      "description": "Run the full pipeline — engine + all analysis scripts + rebuild SQLite database",
+      "usage": "/rebuild [--force]",
+      "builtIn": true,
+      "requiresPlugin": "core/pipeline.py"
+    },
+    {
+      "command": "status",
+      "name": "Pipeline Status",
+      "category": "core",
+      "description": "Show which pipeline steps are current vs stale",
+      "usage": "/status",
+      "builtIn": true,
+      "requiresPlugin": "core/pipeline.py"
+    },
+    {
+      "command": "build-db",
+      "name": "Build Database",
+      "category": "core",
+      "description": "Rebuild SQLite database from all CSV files and KB markdown",
+      "usage": "/build-db",
+      "builtIn": true,
+      "requiresPlugin": "core/build_db.py"
+    },
+    {
+      "command": "db-stats",
+      "name": "Database Stats",
+      "category": "core",
+      "description": "Show all tables with row counts and column counts",
+      "usage": "/db-stats",
+      "builtIn": true,
+      "requiresPlugin": "core/build_db.py"
+    },
+    {
+      "command": "query",
+      "name": "SQL Query",
+      "category": "core",
+      "description": "Run a read-only SQL query against the database",
+      "usage": "/query SELECT name, year_ad FROM events WHERE signature = \"CROSS\"",
+      "builtIn": true,
+      "requiresPlugin": "core/build_db.py"
+    },
+    {
+      "command": "snapshot",
+      "name": "Data Snapshot",
+      "category": "core",
+      "description": "Git snapshot of data and output directories",
+      "usage": "/snapshot \"description of changes\"",
+      "builtIn": true,
+      "requiresPlugin": "core/data-snapshot.sh"
+    },
+    {
+      "command": "analyze",
+      "name": "Run Analysis",
+      "category": "analysis",
+      "description": "Run a specific analysis script by name (e.g., convergence, remainder_scan)",
+      "usage": "/analyze convergence [--target 0.42]",
+      "builtIn": true,
+      "requiresPlugin": "analysis/*"
+    },
+    {
+      "command": "log",
+      "name": "Research Log",
+      "category": "utility",
+      "description": "Add an entry to the research activity log (type: discovery/import/analysis/milestone/note)",
+      "usage": "/log discovery \"Title\" \"Description\"",
+      "builtIn": true
+    },
+    {
+      "command": "uploads",
+      "name": "List Uploads",
+      "category": "utility",
+      "description": "Show files in data/uploads/ ready for processing",
+      "usage": "/uploads",
+      "builtIn": true
+    },
+    {
+      "command": "help",
+      "name": "Help",
+      "category": "utility",
+      "description": "Show all available skills",
+      "usage": "/help",
+      "builtIn": true
+    },
+    {
+      "command": "platforms",
+      "name": "List Platforms",
+      "category": "genesis",
+      "description": "Show all registered platforms with status",
+      "usage": "/platforms",
+      "script": "platform_manager.py",
+      "args": ["list"]
+    },
+    {
+      "command": "create-platform",
+      "name": "Create Platform",
+      "category": "genesis",
+      "description": "Create a new platform from the template",
+      "usage": "/create-platform <name> [description]",
+      "script": "platform_manager.py",
+      "args": ["create"]
+    },
+    {
+      "command": "instances",
+      "name": "List Instances",
+      "category": "genesis",
+      "description": "List instances in a platform",
+      "usage": "/instances <platform-id>",
+      "script": "platform_manager.py",
+      "args": ["instances"]
+    },
+    {
+      "command": "create-instance",
+      "name": "Create Instance",
+      "category": "genesis",
+      "description": "Create a new instance in a platform from the template",
+      "usage": "/create-instance <platform-id> <name> [description]",
+      "script": "platform_manager.py",
+      "args": ["create-instance"]
+    },
+    {
+      "command": "start",
+      "name": "Start Platform",
+      "category": "genesis",
+      "description": "Start a platform's launcher and all its instances",
+      "usage": "/start <platform-id>",
+      "script": "platform_manager.py",
+      "args": ["start"]
+    },
+    {
+      "command": "stop",
+      "name": "Stop Platform",
+      "category": "genesis",
+      "description": "Stop a platform and all its instances",
+      "usage": "/stop <platform-id>",
+      "script": "platform_manager.py",
+      "args": ["stop"]
+    },
+    {
+      "command": "git",
+      "name": "Git",
+      "category": "genesis",
+      "description": "Run git commands on a platform (status, log, diff, commit, tag)",
+      "usage": "/git <platform-id> <command> [args]",
+      "script": "git_manager.py",
+      "args": []
+    },
+    {
+      "command": "versions",
+      "name": "Version History",
+      "category": "genesis",
+      "description": "Show version history (tags + recent commits) for a platform",
+      "usage": "/versions <platform-id>",
+      "script": "git_manager.py",
+      "args": ["versions"]
+    },
+    {
+      "command": "snapshot-platform",
+      "name": "Platform Snapshot",
+      "category": "genesis",
+      "description": "Commit current state of a platform with a description",
+      "usage": "/snapshot <platform-id> <description>",
+      "script": "git_manager.py",
+      "args": ["snapshot"]
+    },
+    {
+      "command": "promote",
+      "name": "Promote to Genesis",
+      "category": "genesis",
+      "description": "Copy template/core/server.js to genesis/server.js (upgrade the IDE)",
+      "usage": "/promote",
+      "script": "promote.sh",
+      "args": []
+    },
+    {
+      "command": "test",
+      "name": "Validate",
+      "category": "genesis",
+      "description": "Syntax-check all JS and Python files in a platform",
+      "usage": "/test <platform-id>",
+      "script": "platform_manager.py",
+      "args": ["test"]
+    },
+    {
+      "command": "servers",
+      "name": "List Servers",
+      "category": "deployment",
+      "description": "Show all registered servers with status (running/stopped), port config, and type",
+      "usage": "/servers",
+      "script": "server_manager.py",
+      "args": ["list"]
+    },
+    {
+      "command": "create-server",
+      "name": "Create Server",
+      "category": "deployment",
+      "description": "Create a new server environment (duplicates structure, rewrites ports, excludes data)",
+      "usage": "/create-server <name> <type> <port-base>",
+      "script": "server_manager.py",
+      "args": ["create"]
+    },
+    {
+      "command": "deploy",
+      "name": "Deploy Code",
+      "category": "deployment",
+      "description": "Push template code from one server to another (WordPress-style update, never touches instance data)",
+      "usage": "/deploy --source <server> --target <server> [--dry-run]",
+      "script": "deploy_manager.py",
+      "args": ["deploy"]
+    },
+    {
+      "command": "server-status",
+      "name": "Server Status",
+      "category": "deployment",
+      "description": "Check health of all servers — running/stopped, ports, latest commit, instance count",
+      "usage": "/server-status [--server <name>]",
+      "script": "deploy_manager.py",
+      "args": ["status"]
+    },
+    {
+      "command": "server-diff",
+      "name": "Server Diff",
+      "category": "deployment",
+      "description": "Show template code differences between two servers (dry-run deploy)",
+      "usage": "/server-diff --source <server> --target <server>",
+      "script": "deploy_manager.py",
+      "args": ["diff"]
+    },
+    {
+      "command": "sources",
+      "name": "Browse Sources",
+      "category": "content",
+      "description": "List available research articles that can be turned into blog posts",
+      "usage": "/sources [search-term]",
+      "script": "draft_manager.py",
+      "args": ["sources"]
+    },
+    {
+      "command": "drafts",
+      "name": "List Drafts",
+      "category": "content",
+      "description": "Show all blog post drafts with status, categories, and word count",
+      "usage": "/drafts [--status draft|refined|review|published]",
+      "script": "draft_manager.py",
+      "args": ["list"]
+    },
+    {
+      "command": "draft",
+      "name": "Create Draft",
+      "category": "content",
+      "description": "Register a new blog draft from a source article",
+      "usage": "/draft <source-article-filename>",
+      "script": "draft_manager.py",
+      "args": ["create"]
+    },
+    {
+      "command": "categorize",
+      "name": "Suggest Categories",
+      "category": "content",
+      "description": "Show the category taxonomy and suggest categories for a draft based on its content",
+      "usage": "/categorize <draft-slug>",
+      "script": "draft_manager.py",
+      "args": ["categorize"]
+    },
+    {
+      "command": "set-status",
+      "name": "Set Draft Status",
+      "category": "content",
+      "description": "Change a draft's status (raw, draft, refined, review, published)",
+      "usage": "/set-status <draft-slug> <new-status>",
+      "script": "draft_manager.py",
+      "args": ["set-status"]
+    },
+    {
+      "command": "publish",
+      "name": "Publish Draft",
+      "category": "content",
+      "description": "Mark a draft as published and update its metadata",
+      "usage": "/publish <draft-slug>",
+      "script": "draft_manager.py",
+      "args": ["publish"]
+    },
+    {
+      "command": "delete-draft",
+      "name": "Delete Draft",
+      "category": "content",
+      "description": "Delete a draft and its file permanently",
+      "usage": "/delete <draft-slug>",
+      "script": "draft_manager.py",
+      "args": ["delete"]
+    },
+    {
+      "command": "taxonomy",
+      "name": "Show Taxonomy",
+      "category": "content",
+      "description": "Display the full nested hashtag category tree",
+      "usage": "/taxonomy",
+      "script": "draft_manager.py",
+      "args": ["taxonomy"]
+    }
+  ]
+}

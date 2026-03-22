@@ -1,0 +1,15 @@
+{
+  "name": "default",
+  "primary": "#c8a55a",
+  "primaryDim": "#a88a3e",
+  "bg": "#0a0b10",
+  "bg2": "#12131a",
+  "bg3": "#181924",
+  "border": "#1e2030",
+  "text": "#e4e4ec",
+  "textMuted": "#9a9ab0",
+  "accent": "#4a8fe7",
+  "success": "#3ac77e",
+  "danger": "#e7554a",
+  "purple": "#9a7be8"
+}

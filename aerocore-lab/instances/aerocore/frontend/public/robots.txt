@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://areocore.com/sitemap.xml
+
+# AeroCore Material Recovery
+# https://areocore.com

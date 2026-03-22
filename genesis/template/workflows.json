@@ -1,0 +1,109 @@
+{
+  "version": "1.0",
+  "description": "Named workflow recipes \u2014 the system prompt renders these so agents know when and how to chain skills.",
+  "workflows": [
+    {
+      "name": "Full Rebuild",
+      "trigger": "After importing new data, changing source CSV files, or modifying the engine",
+      "steps": [
+        "/rebuild",
+        "/db-stats"
+      ],
+      "description": "Re-runs the pipeline (engine + all analysis scripts) and rebuilds the SQLite database. Always run /db-stats after to verify the data loaded correctly."
+    },
+    {
+      "name": "Deep Analysis",
+      "trigger": "When the user asks to investigate a pattern, date, or cluster in depth",
+      "steps": [
+        "/remainder-scan",
+        "/convergence",
+        "/frequency"
+      ],
+      "description": "Start with remainder-scan to find clusters sharing a remainder, then convergence to test if independent methods agree, then frequency to see if events accelerate toward key dates."
+    },
+    {
+      "name": "Pattern Discovery",
+      "trigger": "When exploring the dataset for new patterns or unexpected connections",
+      "steps": [
+        "/cycle-finder",
+        "/complement-pairs",
+        "/mirror-symmetry"
+      ],
+      "description": "Cycle-finder detects repeating intervals, complement-pairs finds events whose remainders sum to ~1.0, mirror-symmetry tests chiastic structure around a midpoint."
+    },
+    {
+      "name": "Tag & Knowledge Audit",
+      "trigger": "When organizing the knowledge base, enriching articles, or building a tag hierarchy",
+      "steps": [
+        "/tag-analyze",
+        "/tag-enrich",
+        "/tag-index"
+      ],
+      "description": "Analyze existing tags for clusters, auto-enrich articles with hierarchical tags, then rebuild the tag index."
+    },
+    {
+      "name": "Date Investigation",
+      "trigger": "When the user asks about a specific year, date, or anchor point",
+      "steps": [
+        "/query",
+        "/anchor-dates",
+        "/daniel-490",
+        "/convergence"
+      ],
+      "description": "Start with a SQL query to find events near the date, then run anchor-dates for clock overlays, daniel-490 for 490-year projections, and convergence to see if methods agree."
+    },
+    {
+      "name": "Data Import",
+      "trigger": "When the user provides new data (CSV, events, or uploads)",
+      "steps": [
+        "/snapshot",
+        "/uploads",
+        "/rebuild",
+        "/db-stats"
+      ],
+      "description": "Always snapshot first for safety. Check uploads folder, then rebuild to process new data and verify with db-stats."
+    },
+    {
+      "name": "Gematria Deep Dive",
+      "trigger": "When investigating Hebrew numerics, sacred numbers, or letter values",
+      "steps": [
+        "/gematria",
+        "/remainder-scan",
+        "/sabbatical-slots"
+      ],
+      "description": "Run gematria for numeric analysis, remainder-scan to find matching clusters, sabbatical-slots for Shemitah wheel positioning."
+    },
+    {
+      "name": "Cross-Calendar Analysis",
+      "trigger": "When comparing events across different calendar systems or religious traditions",
+      "steps": [
+        "/islamic-overlay",
+        "/am-milestones",
+        "/convergence"
+      ],
+      "description": "Islamic-overlay maps Islamic history onto the grid, am-milestones checks millennium boundaries, convergence tests cross-tradition agreement."
+    }
+  ],
+  "categories": {
+    "core": {
+      "description": "Infrastructure skills \u2014 pipeline, database, snapshots. Use these for data management.",
+      "when": "Data changes, imports, backups, or database queries"
+    },
+    "analysis": {
+      "description": "Research scripts that analyze patterns in the dataset. Each auto-registers as a skill from the manifest.",
+      "when": "The user asks about patterns, dates, clusters, frequencies, or wants quantitative analysis"
+    },
+    "content": {
+      "description": "Content creation and publishing \u2014 drafts, sources, taxonomy. Only available in instances with draft_manager.py.",
+      "when": "The user wants to create, manage, or publish blog posts from research"
+    },
+    "utility": {
+      "description": "Helpers \u2014 uploads listing, research log, help.",
+      "when": "Checking uploads, logging research activity, or listing available commands"
+    },
+    "genesis": {
+      "description": "Platform management \u2014 only available in the Genesis IDE console.",
+      "when": "Creating/managing platforms and instances, git operations, promoting templates"
+    }
+  }
+}

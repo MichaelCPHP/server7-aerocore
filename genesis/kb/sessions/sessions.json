@@ -1,0 +1,14 @@
+[
+  {
+    "id": "63a01f67-7248-4527-84ba-320c504ece8e",
+    "claudeSessionId": null,
+    "title": "Genesis IDE — Main",
+    "model": "opus",
+    "createdAt": "2026-03-22T02:51:11.698Z",
+    "lastMessageAt": "2026-03-22T02:51:11.698Z",
+    "messageCount": 0,
+    "totalCost": 0,
+    "agentName": "Genesis IDE",
+    "isMain": true
+  }
+]

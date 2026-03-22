@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lab</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>⚗</text></svg>">
+</head>
+<body>
+<nav>
+  <div class="nav-brand"><span id="nav-icon">⚗</span> <span id="nav-name">Lab</span></div>
+  <div class="nav-links">
+    <a class="nav-link active" href="/" data-page="home" onclick="event.preventDefault();window.app.go('/')">Home</a>
+  </div>
+</nav>
+<div id="app"></div>
+<footer><span id="footer-name">Lab</span></footer>
+<script>
+window.app = { go: function(p) { history.pushState(null,'',p); if(window._appRoute) window._appRoute(); } };
+</script>
+<script type="module">
+import { initApp } from './js/router.js';
+initApp();
+</script>
+</body>
+</html>

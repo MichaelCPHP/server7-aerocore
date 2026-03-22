@@ -1,0 +1,12 @@
+{
+  "id": "server7",
+  "name": "SERVER7-AEROCORE",
+  "type": "production",
+  "role": "platform-production",
+  "portBase": 9000,
+  "displayName": "AeroCore",
+  "icon": "\u2699",
+  "color": "#006657",
+  "created": "2026-03-21",
+  "description": "AeroCore Material Recovery — scrap carbide, tungsten, aerospace alloys, precision manufacturing surplus"
+}
