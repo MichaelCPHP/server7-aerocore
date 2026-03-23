@@ -1,0 +1,383 @@
+{
+  "account": {
+    "customerId": "580-872-1896",
+    "platform": "Google Ads",
+    "business": "AreoCore Inc.",
+    "contact": "Chino Cooper",
+    "phone": "(949) 239-8912",
+    "email": "Chino@areocore.com",
+    "website": "areocore.com",
+    "landingPage": "https://aerocore.pages.dev"
+  },
+  "budget": {
+    "monthly": 3630,
+    "daily": 121,
+    "currency": "USD",
+    "startDate": "2026-04-01",
+    "biddingStrategy": "Maximize Clicks",
+    "biddingNote": "Switch to Target CPA after 30+ conversions (approx 4-6 weeks)"
+  },
+  "geographicTargeting": {
+    "strategy": "Southern California — Los Angeles metro + surrounding counties",
+    "targetType": "LOCATION",
+    "counties": [
+      { "name": "Los Angeles County", "priority": "primary", "reason": "Largest manufacturing hub in SoCal" },
+      { "name": "Orange County", "priority": "primary", "reason": "AreoCore home base (949), dense CNC/aerospace corridor" },
+      { "name": "San Bernardino County", "priority": "primary", "reason": "Inland Empire — heavy manufacturing, logistics" },
+      { "name": "Riverside County", "priority": "primary", "reason": "Inland Empire — growing industrial base" },
+      { "name": "Ventura County", "priority": "secondary", "reason": "Aerospace/defense contractors" },
+      { "name": "San Diego County", "priority": "secondary", "reason": "Major aerospace/defense hub (General Atomics, NASSCO, Northrop)" },
+      { "name": "Kern County", "priority": "secondary", "reason": "Oil/gas and industrial machining" },
+      { "name": "Santa Barbara County", "priority": "tertiary", "reason": "Some aerospace presence (Raytheon)" }
+    ],
+    "radiusAlternative": "50-mile radius from Chino Hills, CA (covers LA, OC, IE, parts of SD/Ventura)"
+  },
+  "campaigns": [
+    {
+      "name": "AeroCore_Google_Search_CarbideRecovery_2026Q2",
+      "type": "SEARCH",
+      "status": "PAUSED",
+      "objective": "Lead Generation — quote requests and phone calls",
+      "dailyBudget": 55,
+      "monthlyBudget": 1650,
+      "budgetNote": "45% of total budget — highest intent keywords",
+      "adGroups": [
+        {
+          "name": "Scrap Carbide Buying",
+          "theme": "Machine shops looking to sell scrap/used carbide tooling",
+          "keywords": [
+            { "match": "phrase", "keyword": "sell scrap carbide" },
+            { "match": "phrase", "keyword": "scrap carbide buyer" },
+            { "match": "phrase", "keyword": "sell used carbide" },
+            { "match": "phrase", "keyword": "carbide recycling near me" },
+            { "match": "phrase", "keyword": "sell carbide end mills" },
+            { "match": "phrase", "keyword": "scrap carbide pickup" },
+            { "match": "exact", "keyword": "sell scrap carbide" },
+            { "match": "exact", "keyword": "scrap carbide buyer near me" },
+            { "match": "exact", "keyword": "carbide scrap price per pound" },
+            { "match": "broad", "keyword": "sell worn carbide tooling" },
+            { "match": "broad", "keyword": "used carbide insert buyer" }
+          ],
+          "ads": [
+            {
+              "type": "RESPONSIVE_SEARCH_AD",
+              "headlines": [
+                "We Buy Scrap Carbide Tooling",
+                "Sell Your Scrap Carbide Today",
+                "Top Dollar for Used Carbide",
+                "Scrap Carbide Pickup in SoCal",
+                "Carbide End Mills & Inserts",
+                "Free Quotes — Fast Pickup",
+                "AreoCore Material Recovery",
+                "Turn Scrap Into Cash",
+                "Trusted Carbide Buyer",
+                "Same-Week Pickup Available",
+                "Competitive Carbide Prices",
+                "Serving Los Angeles & OC",
+                "Call Now — (949) 239-8912",
+                "Professional Scrap Service",
+                "Get a Quote in Minutes"
+              ],
+              "descriptions": [
+                "We buy scrap carbide end mills, inserts, drills & rounds. Competitive pricing, fast quotes, pickup across Southern California.",
+                "AreoCore pays top dollar for your used carbide tooling. Professional material recovery for machine shops & manufacturers.",
+                "Serving LA, Orange County & the Inland Empire. Get a fast quote on your scrap carbide — consistent pickups, transparent pricing.",
+                "Don't throw away valuable carbide. We offer competitive prices and reliable pickup from your shop. Call or request a quote today."
+              ],
+              "finalUrl": "https://aerocore.pages.dev",
+              "pathFields": ["sell", "scrap-carbide"]
+            }
+          ]
+        },
+        {
+          "name": "Tungsten Scrap Buying",
+          "theme": "Sellers of tungsten and tungsten carbide scrap",
+          "keywords": [
+            { "match": "phrase", "keyword": "sell tungsten scrap" },
+            { "match": "phrase", "keyword": "tungsten carbide buyer" },
+            { "match": "phrase", "keyword": "tungsten recycling" },
+            { "match": "phrase", "keyword": "scrap tungsten price" },
+            { "match": "exact", "keyword": "sell tungsten scrap" },
+            { "match": "exact", "keyword": "tungsten scrap buyer near me" },
+            { "match": "broad", "keyword": "tungsten rod scrap buyer" },
+            { "match": "broad", "keyword": "sell tungsten carbide scrap" }
+          ],
+          "ads": [
+            {
+              "type": "RESPONSIVE_SEARCH_AD",
+              "headlines": [
+                "We Buy Tungsten Scrap",
+                "Sell Your Tungsten Today",
+                "Top Prices for Tungsten",
+                "Tungsten Carbide Buyer",
+                "SoCal Tungsten Recovery",
+                "Fast Quotes & Pickup",
+                "AreoCore Material Recovery",
+                "Turn Tungsten Into Cash",
+                "Professional Scrap Buyer",
+                "Serving All of SoCal",
+                "Call (949) 239-8912",
+                "Reliable Tungsten Pickup",
+                "Get Your Quote Now",
+                "Competitive Market Rates",
+                "Trusted by Manufacturers"
+              ],
+              "descriptions": [
+                "AreoCore buys tungsten carbide, tungsten solids, powder & scrap. Get competitive prices and fast pickup across Southern California.",
+                "Professional tungsten recovery for machine shops and manufacturers. Transparent pricing based on current market rates. Request a quote.",
+                "We pay top dollar for your tungsten scrap. Consistent pickups, hassle-free process. Serving LA, Orange County & Inland Empire.",
+                "Stop stockpiling tungsten scrap. AreoCore provides fast quotes and reliable pickup. Call today or submit a quote request online."
+              ],
+              "finalUrl": "https://aerocore.pages.dev",
+              "pathFields": ["sell", "tungsten"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AeroCore_Google_Search_AerospaceAlloys_2026Q2",
+      "type": "SEARCH",
+      "status": "PAUSED",
+      "objective": "Lead Generation — aerospace alloy and high-temp alloy sellers",
+      "dailyBudget": 40,
+      "monthlyBudget": 1200,
+      "budgetNote": "33% of budget — high-value materials, aerospace corridor targeting",
+      "adGroups": [
+        {
+          "name": "Inconel & Titanium Scrap",
+          "theme": "Aerospace manufacturers selling Inconel, titanium, Hastelloy scrap",
+          "keywords": [
+            { "match": "phrase", "keyword": "sell inconel scrap" },
+            { "match": "phrase", "keyword": "titanium scrap buyer" },
+            { "match": "phrase", "keyword": "sell titanium scrap" },
+            { "match": "phrase", "keyword": "hastelloy scrap buyer" },
+            { "match": "phrase", "keyword": "aerospace alloy recycling" },
+            { "match": "phrase", "keyword": "nickel alloy scrap buyer" },
+            { "match": "exact", "keyword": "sell inconel scrap" },
+            { "match": "exact", "keyword": "inconel 718 scrap price" },
+            { "match": "exact", "keyword": "titanium scrap buyer near me" },
+            { "match": "broad", "keyword": "sell aerospace alloy scrap" },
+            { "match": "broad", "keyword": "high temperature alloy buyer" }
+          ],
+          "ads": [
+            {
+              "type": "RESPONSIVE_SEARCH_AD",
+              "headlines": [
+                "We Buy Inconel & Titanium",
+                "Sell Aerospace Alloy Scrap",
+                "Top Dollar for Inconel Scrap",
+                "Titanium Scrap Buyer — SoCal",
+                "Hastelloy & Monel Buyer",
+                "Aerospace Material Recovery",
+                "Fast Quotes on Alloy Scrap",
+                "AreoCore — Alloy Experts",
+                "We Know Aerospace Materials",
+                "Call (949) 239-8912",
+                "Serving Defense Contractors",
+                "Competitive Alloy Prices",
+                "Professional Scrap Pickup",
+                "Inconel 718, 625 & More",
+                "Get a Quote Today"
+              ],
+              "descriptions": [
+                "AreoCore buys Inconel, titanium, Hastelloy & high-temp alloy scrap. Competitive pricing for aerospace-grade materials. SoCal pickup.",
+                "Aerospace manufacturers trust AreoCore for professional material recovery. We buy Inconel 718, 625, titanium bar stock & turnings.",
+                "Get top dollar for your aerospace alloy scrap. We serve defense contractors, MRO facilities & manufacturers across Southern California.",
+                "Don't let high-value alloys go to waste. AreoCore offers fast quotes, competitive rates & reliable pickup for Inconel, Ti & more."
+              ],
+              "finalUrl": "https://aerocore.pages.dev",
+              "pathFields": ["sell", "aerospace-alloys"]
+            }
+          ]
+        },
+        {
+          "name": "Tool Steel & HSS Scrap",
+          "theme": "Tool & die shops selling tool steel and HSS scrap",
+          "keywords": [
+            { "match": "phrase", "keyword": "sell tool steel scrap" },
+            { "match": "phrase", "keyword": "HSS scrap buyer" },
+            { "match": "phrase", "keyword": "tool steel recycling" },
+            { "match": "phrase", "keyword": "sell used tool steel" },
+            { "match": "exact", "keyword": "sell tool steel scrap" },
+            { "match": "exact", "keyword": "H13 tool steel scrap buyer" },
+            { "match": "broad", "keyword": "high speed steel scrap buyer" },
+            { "match": "broad", "keyword": "D2 tool steel scrap" }
+          ],
+          "ads": [
+            {
+              "type": "RESPONSIVE_SEARCH_AD",
+              "headlines": [
+                "We Buy Tool Steel Scrap",
+                "Sell Your HSS Scrap Today",
+                "Tool Steel Buyer — SoCal",
+                "H13, D2, M2 & More",
+                "Top Prices for Tool Steel",
+                "Fast Scrap Pickup Service",
+                "AreoCore Material Recovery",
+                "Turn Tool Steel Into Cash",
+                "Serving Tool & Die Shops",
+                "Call (949) 239-8912",
+                "Professional Scrap Buyer",
+                "Competitive Market Rates",
+                "Same-Week Pickup",
+                "Get a Quote in Minutes",
+                "Trusted SoCal Buyer"
+              ],
+              "descriptions": [
+                "AreoCore buys H13, D2, M2, HSS and other tool steel scrap. Competitive pricing and fast pickup for tool & die shops in SoCal.",
+                "Professional tool steel recovery for manufacturers. Transparent pricing, consistent pickups. Serving LA, OC & the Inland Empire.",
+                "Stop stockpiling tool steel scrap. AreoCore offers fast quotes and reliable pickup across Southern California. Call or request online.",
+                "We pay top dollar for your tool steel and high-speed steel scrap. Get a fast quote from AreoCore — your trusted material recovery partner."
+              ],
+              "finalUrl": "https://aerocore.pages.dev",
+              "pathFields": ["sell", "tool-steel"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AeroCore_Google_Search_GeneralScrap_2026Q2",
+      "type": "SEARCH",
+      "status": "PAUSED",
+      "objective": "Lead Generation — broader manufacturing scrap searches",
+      "dailyBudget": 26,
+      "monthlyBudget": 780,
+      "budgetNote": "22% of budget — catch-all for general scrap searches",
+      "adGroups": [
+        {
+          "name": "General Manufacturing Scrap",
+          "theme": "Broad manufacturing and industrial scrap disposal searches",
+          "keywords": [
+            { "match": "phrase", "keyword": "sell manufacturing scrap" },
+            { "match": "phrase", "keyword": "industrial scrap buyer" },
+            { "match": "phrase", "keyword": "machine shop scrap buyer" },
+            { "match": "phrase", "keyword": "CNC scrap buyer" },
+            { "match": "phrase", "keyword": "manufacturing surplus buyer" },
+            { "match": "phrase", "keyword": "scrap metal pickup service" },
+            { "match": "exact", "keyword": "sell machine shop scrap" },
+            { "match": "exact", "keyword": "industrial scrap buyer near me" },
+            { "match": "broad", "keyword": "sell CNC machining scrap materials" }
+          ],
+          "ads": [
+            {
+              "type": "RESPONSIVE_SEARCH_AD",
+              "headlines": [
+                "We Buy Machine Shop Scrap",
+                "Sell Your Manufacturing Scrap",
+                "Industrial Scrap Buyer — SoCal",
+                "CNC Shop Scrap Pickup",
+                "Top Dollar for Your Scrap",
+                "Fast Quotes & Pickup",
+                "AreoCore Material Recovery",
+                "Carbide, Alloys & More",
+                "Serving Manufacturers",
+                "Call (949) 239-8912",
+                "Professional Scrap Service",
+                "Competitive Scrap Prices",
+                "Free On-Site Pickup",
+                "Get a Quote Today",
+                "Trusted by Machine Shops"
+              ],
+              "descriptions": [
+                "AreoCore buys carbide, tungsten, Inconel, titanium & tool steel scrap from machine shops and manufacturers across Southern California.",
+                "Professional material recovery for CNC shops, aerospace manufacturers & fabrication facilities. Competitive pricing, fast pickup.",
+                "Turn your manufacturing scrap into cash. AreoCore offers free quotes, on-site pickup & transparent pricing. Serving all of SoCal.",
+                "Machine shops trust AreoCore for reliable scrap pickup. We buy carbide tooling, aerospace alloys, tool steel & manufacturing surplus."
+              ],
+              "finalUrl": "https://aerocore.pages.dev",
+              "pathFields": ["sell", "scrap"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "negativeKeywords": {
+    "campaignLevel": [
+      "buy carbide",
+      "buy tungsten",
+      "buy inconel",
+      "buy titanium",
+      "carbide for sale",
+      "tungsten for sale",
+      "new end mills",
+      "new carbide inserts",
+      "new drill bits",
+      "tungsten rings",
+      "tungsten jewelry",
+      "tungsten wedding band",
+      "carbide lamp",
+      "carbide fishing",
+      "titanium watch",
+      "titanium jewelry",
+      "titanium bike",
+      "titanium golf",
+      "scrap car",
+      "junk car",
+      "scrap yard",
+      "junkyard",
+      "auto salvage",
+      "copper scrap",
+      "aluminum scrap",
+      "steel recycling",
+      "jobs",
+      "career",
+      "hiring",
+      "salary",
+      "course",
+      "training",
+      "certification",
+      "what is carbide",
+      "what is tungsten",
+      "what is inconel",
+      "wikipedia",
+      "DIY",
+      "homemade",
+      "free"
+    ]
+  },
+  "adExtensions": {
+    "callExtension": {
+      "phoneNumber": "(949) 239-8912",
+      "countryCode": "US",
+      "callTrackingEnabled": true
+    },
+    "sitelinkExtensions": [
+      { "text": "Get a Free Quote", "url": "https://aerocore.pages.dev/#quote", "description1": "Fast quotes on carbide, alloys & more", "description2": "Competitive pricing, same-week pickup" },
+      { "text": "Materials We Buy", "url": "https://aerocore.pages.dev/#materials", "description1": "Carbide, tungsten, Inconel, titanium", "description2": "Tool steel, HSS & aerospace alloys" },
+      { "text": "About AreoCore", "url": "https://aerocore.pages.dev/#about", "description1": "Professional material recovery", "description2": "Trusted by SoCal manufacturers" },
+      { "text": "Service Areas", "url": "https://aerocore.pages.dev/#service-area", "description1": "Serving all of Southern California", "description2": "LA, Orange County, Inland Empire & more" }
+    ],
+    "calloutExtensions": [
+      "Free On-Site Pickup",
+      "Same-Week Service",
+      "Competitive Market Prices",
+      "Transparent Pricing",
+      "Serving All of SoCal",
+      "Professional Service"
+    ],
+    "structuredSnippets": [
+      { "header": "Types", "values": ["Carbide End Mills", "Carbide Inserts", "Tungsten", "Inconel", "Titanium", "Tool Steel", "HSS"] },
+      { "header": "Service catalog", "values": ["Scrap Pickup", "Material Quotes", "On-Site Assessment", "Recurring Pickup", "Bulk Processing"] }
+    ]
+  },
+  "conversionTracking": {
+    "primaryConversions": [
+      { "name": "Quote Form Submission", "type": "WEBPAGE", "action": "Form submit on quote/contact section" },
+      { "name": "Phone Call", "type": "PHONE_CALL", "action": "Click-to-call or call extension" }
+    ],
+    "secondaryConversions": [
+      { "name": "Email Click", "type": "WEBPAGE", "action": "Click on mailto:Chino@areocore.com" },
+      { "name": "Engaged Visit", "type": "WEBPAGE", "action": "Time on site > 2 min or 3+ pages" }
+    ],
+    "trackingSetup": {
+      "googleTag": "Needs to be installed on aerocore.pages.dev",
+      "phoneTracking": "Google forwarding number or call tracking service"
+    }
+  },
+  "utmParameters": {
+    "template": "utm_source=google&utm_medium=cpc&utm_campaign={campaignid}&utm_content={creative}&utm_term={keyword}"
+  }
+}

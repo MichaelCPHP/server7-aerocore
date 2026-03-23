@@ -1,0 +1,25 @@
+{
+  "created": [
+    {
+      "name": "AeroCore_Google_Search_CarbideRecovery_2026Q2",
+      "resource_name": "customers/5808721896/campaigns/23678256456",
+      "daily_budget": 55
+    },
+    {
+      "name": "AeroCore_Google_Search_AerospaceAlloys_2026Q2",
+      "resource_name": "customers/5808721896/campaigns/23683643729",
+      "daily_budget": 40
+    },
+    {
+      "name": "AeroCore_Google_Search_GeneralScrap_2026Q2",
+      "resource_name": "customers/5808721896/campaigns/23683645337",
+      "daily_budget": 26
+    }
+  ],
+  "status": "all_paused",
+  "campaign_resource_names": [
+    "customers/5808721896/campaigns/23678256456",
+    "customers/5808721896/campaigns/23683643729",
+    "customers/5808721896/campaigns/23683645337"
+  ]
+}

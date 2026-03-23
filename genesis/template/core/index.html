@@ -689,6 +689,7 @@
           <span class="joint-channel-name" id="joint-channel-name">#channel</span>
           <span class="joint-topic" id="joint-topic"></span>
           <span class="joint-members-badge" id="joint-members-badge">0</span>
+          <button class="btn-joint-close" onclick="refreshJointChannel()" title="Refresh" style="font-size:13px">&#8635;</button>
           <button class="btn-joint-close" onclick="closeJointPanel()" title="Close">&times;</button>
         </div>
         <div class="joint-messages" id="joint-messages"></div>
@@ -3802,6 +3803,7 @@ async function renderSbChannels(el) {
     </li>`;
   }
   html += '</ul>';
+  html += `<div style="padding:4px 8px"><button onclick="renderSbChannels(document.getElementById('sb-panel'))" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:3px 8px;border-radius:4px;font-size:10px;width:100%" title="Refresh channels">&#8635; Refresh</button></div>`;
   html += `<div class="sb-channel-create">
     <input id="sb-new-channel" placeholder="#channel-name" onkeydown="if(event.key==='Enter')sbCreateChannel()">
     <button onclick="sbCreateChannel()">Create</button>
@@ -3854,6 +3856,26 @@ async function openJointChannel(channelName) {
   renderJointMessages();
   connectJointSSE();
   renderSbPanel(); // update sidebar active state
+}
+
+async function refreshJointChannel() {
+  if (!_jointActiveChannel) return;
+  const channelName = _jointActiveChannel.name;
+  disconnectJointSSE();
+  // Reload channel info (refreshes members list for @mention autocomplete)
+  try {
+    const { data } = await api('GET', `/api/joint/channels/${encodeURIComponent(channelName)}`);
+    if (!data.error) _jointActiveChannel = data;
+  } catch {}
+  // Reload all messages from scratch
+  try {
+    const { data } = await api('GET', `/api/joint/channels/${encodeURIComponent(channelName)}/messages?since_seq=0&limit=500`);
+    _jointMessages = data || [];
+    _jointLastSeq = _jointMessages.length > 0 ? _jointMessages[_jointMessages.length - 1].seq : 0;
+  } catch { _jointMessages = []; _jointLastSeq = 0; }
+  document.getElementById('joint-members-badge').textContent = (_jointActiveChannel.members || []).length + ' members';
+  renderJointMessages();
+  connectJointSSE();
 }
 
 function closeJointPanel() {

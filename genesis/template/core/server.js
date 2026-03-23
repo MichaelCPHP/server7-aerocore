@@ -1861,7 +1861,48 @@ cd "${WORK_DIR}"
 // Rate limiter state for agent responses in channels
 const channelRateLimits = new Map(); // channelId -> { count, resetAt }
 const channelAgentExchanges = new Map(); // channelId -> { lastAgentId, consecutiveCount }
+const channelRecentDigests = new Map(); // channelId -> [last N content hashes] for dedup
 let activeInvocation = false; // concurrency guard — one invoke at a time
+
+// Shared loop-prevention check — used by all invoke paths
+// role param: 'agent', 'user', 'human', 'system' — used to reliably identify human messages
+function shouldBlockInvoke(channelId, senderAgentId, content, role) {
+  const exchanges = channelAgentExchanges.get(channelId) || { lastAgentId: null, consecutiveCount: 0 };
+  // Determine if sender is an agent: check role first (most reliable), fall back to ID heuristics
+  const isHuman = role === 'user' || role === 'human';
+  const isSystem = role === 'system' || senderAgentId === 'system';
+  const isAgent = !isHuman && !isSystem && !!senderAgentId && senderAgentId !== 'user';
+
+  if (isHuman || isSystem) {
+    // Human or system messages always reset the exchange counter
+    exchanges.consecutiveCount = 0;
+  } else if (isAgent && exchanges.lastAgentId && exchanges.lastAgentId !== senderAgentId) {
+    // Different agent responding — this is the ping-pong pattern
+    exchanges.consecutiveCount++;
+  }
+  // Same agent posting again doesn't increment (not a ping-pong)
+  exchanges.lastAgentId = isAgent ? senderAgentId : null;
+  channelAgentExchanges.set(channelId, exchanges);
+
+  if (isAgent && exchanges.consecutiveCount > 4) {
+    log(`Loop prevention: agents exchanged ${exchanges.consecutiveCount} msgs in channel ${channelId}`);
+    return 'exchange_limit';
+  }
+
+  // Content dedup — block if the same content hash appears 2+ times in last 6 messages
+  const hash = require('node:crypto').createHash('md5').update(String(content).slice(0, 2000)).digest('hex');
+  const digests = channelRecentDigests.get(channelId) || [];
+  digests.push(hash);
+  if (digests.length > 6) digests.splice(0, digests.length - 6);
+  channelRecentDigests.set(channelId, digests);
+  const dupeCount = digests.filter(d => d === hash).length;
+  if (dupeCount >= 2) {
+    log(`Loop prevention: duplicate content detected (${dupeCount}x) in channel ${channelId}`);
+    return 'content_duplicate';
+  }
+
+  return false; // OK to proceed
+}
 
 function invokeAgentInChannel(channelId, prompt, senderName) {
   if (activeInvocation) {
@@ -1917,6 +1958,48 @@ function invokeAgentInChannel(channelId, prompt, senderName) {
       const responseText = lastAssistant.content.slice(0, 8000); // Cap channel responses
       log(`Invoke: ${agentName} responding in #${channelName} via main session (${responseText.length} chars)`);
       jointCmd('post', [channelId, AGENT_ID, AGENT_DISPLAY, 'agent', responseText]);
+
+      // --- Cross-server @mention forwarding for invoke responses ---
+      // Without this, agent responses posted via jointCmd bypass the HTTP handler's mention detection
+      // Loop prevention: check before forwarding to prevent agent ping-pong
+      const blocked = shouldBlockInvoke(channelId, AGENT_ID, responseText, 'agent');
+      if (blocked) {
+        log(`Invoke response forwarding blocked (${blocked}) in #${channelName}`);
+        if (blocked === 'exchange_limit') {
+          jointCmd('post', [channelId, 'system', 'System', 'system',
+            `Conversation paused — agents have been going back and forth. @Michael to continue.`]);
+        }
+      } else {
+        try {
+          const members = jointCmd('members', [channelId]);
+          if (Array.isArray(members)) {
+            for (const member of members) {
+              if (String(member.port) === String(PORT)) continue;
+              if (member.agent_id === AGENT_ID) continue;
+              const memberName = member.display_name || '';
+              const firstName = memberName.split(/\s+/)[0] || memberName;
+              const remoteMentionPatterns = [
+                new RegExp(`@${memberName}\\b`, 'i'),
+                firstName !== memberName ? new RegExp(`@${firstName}\\b`, 'i') : null,
+                memberName.length >= 3 ? new RegExp(`@${memberName.slice(0, 3)}\\b`, 'i') : null,
+              ].filter(Boolean);
+              if (remoteMentionPatterns.some(p => p.test(responseText))) {
+                log(`Invoke response @mention: forwarding invoke for ${memberName} to port ${member.port}`);
+                const postData = JSON.stringify({ prompt: responseText, senderName: AGENT_DISPLAY, senderAgentId: AGENT_ID, senderRole: 'agent' });
+                const invokeReq = require('node:http').request({
+                  hostname: 'localhost', port: parseInt(member.port),
+                  path: `/api/joint/channels/${encodeURIComponent(channelId)}/invoke`,
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+                }, () => { /* fire and forget */ });
+                invokeReq.on('error', (e) => log(`Invoke response forward error (port ${member.port}): ${e.message}`));
+                invokeReq.write(postData);
+                invokeReq.end();
+              }
+            }
+          }
+        } catch (e) { log(`Invoke response mention forwarding error: ${e.message}`); }
+      }
     } else {
       log(`Invoke: no assistant response in main session for #${channelName}`);
       jointCmd('post', [channelId, 'system', 'System', 'system', `${agentName} had no response.`]);
@@ -3663,22 +3746,13 @@ const server = http.createServer(async (req, res) => {
           log(`Rate limit hit for #${channelId} — ${waitSec}s remaining`);
           jointCmd('post', [channelId, 'system', 'System', 'system', `Rate limit reached — pausing ${agentName} responses for ${waitSec}s.`]);
         } else {
-          // Agent-to-agent loop prevention
-          const exchanges = channelAgentExchanges.get(channelId) || { lastAgentId: null, consecutiveCount: 0 };
-          const isAgentSender = role === 'agent';
-          if (isAgentSender && exchanges.lastAgentId && exchanges.lastAgentId !== agentId) {
-            // This is an agent responding to another agent
-            exchanges.consecutiveCount++;
-          } else if (!isAgentSender) {
-            // Human message — reset counter
-            exchanges.consecutiveCount = 0;
-          }
-          exchanges.lastAgentId = agentId;
-          channelAgentExchanges.set(channelId, exchanges);
-
-          if (isAgentSender && exchanges.consecutiveCount > 2) {
-            log(`Loop prevention: agents exchanged ${exchanges.consecutiveCount} messages in #${channelId}`);
-            jointCmd('post', [channelId, 'system', 'System', 'system', `Conversation paused — agents have exchanged ${exchanges.consecutiveCount} messages. @Michael to continue.`]);
+          // Shared loop prevention (exchange count + content dedup)
+          const blocked = shouldBlockInvoke(channelId, agentId, content, role);
+          if (blocked) {
+            log(`Loop prevention (${blocked}): blocking invoke in #${channelId}`);
+            if (blocked === 'exchange_limit') {
+              jointCmd('post', [channelId, 'system', 'System', 'system', `Conversation paused — agents have been going back and forth. @Michael to continue.`]);
+            }
           } else {
             // Update rate limiter
             if (!limit || now >= limit.resetAt) {
@@ -3713,7 +3787,7 @@ const server = http.createServer(async (req, res) => {
             ].filter(Boolean);
             if (remoteMentionPatterns.some(p => p.test(content))) {
               log(`Cross-server @mention: forwarding invoke for ${memberName} to port ${member.port}`);
-              const postData = JSON.stringify({ prompt: content, senderName: displayName });
+              const postData = JSON.stringify({ prompt: content, senderName: displayName, senderAgentId: agentId, senderRole: role || 'agent' });
               const invokeReq = http.request({
                 hostname: 'localhost', port: parseInt(member.port),
                 path: `/api/joint/channels/${encodeURIComponent(channelId)}/invoke`,
@@ -3767,6 +3841,21 @@ const server = http.createServer(async (req, res) => {
     if (sub === 'invoke' && m === 'POST') {
       const body = await parseBody(req);
       const prompt = body.prompt || 'Please respond to the conversation in this joint channel.';
+      const senderAgent = body.senderAgentId || body.senderName || null;
+
+      // Loop prevention — check before accepting the invoke
+      const senderRole = body.senderRole || 'agent';
+      const blocked = shouldBlockInvoke(channelId, senderAgent, prompt, senderRole);
+      if (blocked) {
+        log(`Invoke blocked (${blocked}) for ${AGENT_DISPLAY} in channel ${channelId}`);
+        json(res, { data: { ok: false, blocked, message: `Invoke blocked by loop prevention (${blocked})` } });
+        if (blocked === 'exchange_limit') {
+          jointCmd('post', [channelId, 'system', 'System', 'system',
+            `Conversation paused — agents have been going back and forth. @Michael to continue.`]);
+        }
+        return;
+      }
+
       // Post system message and respond immediately (don't block)
       jointCmd('post', [channelId, 'system', 'System', 'system', `Invoking ${AGENT_DISPLAY}...`]);
       json(res, { data: { ok: true, message: `Invocation sent to ${AGENT_DISPLAY}` } });
