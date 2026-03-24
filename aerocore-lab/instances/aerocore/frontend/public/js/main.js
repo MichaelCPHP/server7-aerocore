@@ -97,61 +97,60 @@
     form.addEventListener('submit', function(e) {
       e.preventDefault();
 
-      var formData = new FormData(form);
-      var data = {};
-      formData.forEach(function(value, key) {
-        if (key !== 'photos') data[key] = value;
-      });
-
-      var utmData = getStoredUtmParams();
-      var lpSource = window.location.pathname;
-
       // Show sending state
       var btn = form.querySelector('button[type="submit"]');
       btn.textContent = 'Sending...';
       btn.disabled = true;
 
-      // Build payload for API
-      var payload = {
-        name: data.name || '',
-        company: data.company || '',
-        email: data.email || '',
-        phone: data.phone || '',
-        material: data.material || '',
-        details: data.details || '',
-        source: lpSource,
-        utm: utmData
-      };
+      // Build FormData from form (includes files automatically)
+      var formData = new FormData(form);
+
+      // Append UTM params as individual fields
+      var utmData = getStoredUtmParams();
+      var utmFields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid'];
+      utmFields.forEach(function(key) {
+        if (utmData[key]) formData.append(key, utmData[key]);
+      });
+
+      // Append source page
+      formData.append('source', window.location.pathname);
 
       // Submit to Cloudflare Pages Function, fall back to mailto
       fetch('/api/quote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: formData
       }).then(function(res) {
         if (!res.ok) throw new Error('API error');
         return res.json();
       }).then(function(result) {
         if (!result.ok) throw new Error(result.error || 'Submission failed');
-        // Success — redirect to thank-you page
-        window.location.href = '/contact/thank-you/';
+        // Success — fire conversion event then redirect
+        trackConversion('AW-18034797214/XN5TCMfnjo4cEJ7V1JdD', function() {
+          window.location.href = '/contact/thank-you/';
+        });
       }).catch(function() {
         // Fallback: construct mailto link
+        var name = formData.get('name') || '';
+        var company = formData.get('company') || '';
+        var email = formData.get('email') || '';
+        var phone = formData.get('phone') || '';
+        var material = formData.get('material') || '';
+        var details = formData.get('details') || '';
         var utmLine = '';
         var utmEntries = Object.keys(utmData);
         if (utmEntries.length > 0) {
           utmLine = '\n\n--- Ad Attribution ---\n' +
             utmEntries.map(function(k) { return k + ': ' + utmData[k]; }).join('\n');
         }
-        var subject = encodeURIComponent('Quote Request from ' + (data.name || 'Website'));
+        var subject = encodeURIComponent('Quote Request from ' + (name || 'Website'));
         var body = encodeURIComponent(
-          'Name: ' + (data.name || '') + '\n' +
-          'Company: ' + (data.company || '') + '\n' +
-          'Email: ' + (data.email || '') + '\n' +
-          'Phone: ' + (data.phone || '') + '\n' +
-          'Material: ' + (data.material || '') + '\n' +
-          'Details: ' + (data.details || '') + '\n' +
-          'Source Page: ' + lpSource +
+          'Name: ' + name + '\n' +
+          'Company: ' + company + '\n' +
+          'Email: ' + email + '\n' +
+          'Phone: ' + phone + '\n' +
+          'Material: ' + material + '\n' +
+          'Details: ' + details + '\n' +
+          'Source Page: ' + window.location.pathname +
           utmLine
         );
         window.location.href = 'mailto:Info@AreoCore.com?subject=' + subject + '&body=' + body;
@@ -179,12 +178,12 @@
   });
 
   // File upload feedback
-  var fileInput = document.getElementById('photos');
-  var fileUpload = document.getElementById('file-upload');
-  if (fileInput && fileUpload) {
+  var fileInput = document.getElementById('file-input');
+  if (fileInput) {
+    var fileUploadWrap = fileInput.closest('.file-upload');
     fileInput.addEventListener('change', function() {
       var count = fileInput.files.length;
-      var content = fileUpload.querySelector('.file-upload-content span');
+      var content = fileUploadWrap ? fileUploadWrap.querySelector('.file-upload-content span') : null;
       if (content && count > 0) {
         content.textContent = count + ' file' + (count > 1 ? 's' : '') + ' selected';
       }

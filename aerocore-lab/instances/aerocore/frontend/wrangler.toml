@@ -1,0 +1,12 @@
+name = "aerocore"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aerocore-crm"
+database_id = "35a19d1c-75d4-4b7e-84b5-67592f3ef3af"
+
+[[kv_namespaces]]
+binding = "UPLOADS"
+id = "341ec6b4ffef47a5a6e0f80c5cb9c2ca"

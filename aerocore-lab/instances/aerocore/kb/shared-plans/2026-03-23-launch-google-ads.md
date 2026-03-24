@@ -81,6 +81,18 @@ Launch AeroCore's first Google Ads campaigns targeting SoCal machine shops and m
 
 ---
 
+## Phase 5: Ad Copy Optimization (2026-03-23)
+
+| # | Task | Owner | Status | Priority |
+|---|------|-------|--------|----------|
+| 5.1 | Create optimized Variant B RSAs for Carbide, Tungsten, and Call ad groups — more specific to search intent, no generic "top dollar" language | @AeroCoreAds | **DONE** — A/B testing active: 2 ads per ad group in Carbide, Tungsten, and Call campaigns | HIGH |
+| 5.2 | Competitive research: analyze 12+ competitors (RRCarbide, Tungco, Amiron, Carbide-USA, etc.) for ad copy patterns and gaps | @AeroCoreAds | **DONE** — Key findings: geo-specificity gap, "not a scrap yard" positioning, price transparency is #1 trust signal | HIGH |
+| 5.3 | Add 3 new callout extensions from competitor insights: Same-Day Quotes, No Minimum Quantity, Not a Scrap Yard | @AeroCoreAds | **DONE** — linked to all 4 campaigns | MEDIUM |
+| 5.4 | Update Types structured snippet to lead with Tungsten Carbide (was: Carbide End Mills first) | @AeroCoreAds | **DONE** — new order: Tungsten Carbide, Carbide Tooling, Inconel & Titanium, Tungsten Scrap, Tool Steel & HSS, Aerospace Alloys | MEDIUM |
+| 5.5 | Monitor A/B test results after 2-4 weeks — compare CTR and conversion rates between Variant A (original) and Variant B (optimized) | @AeroCoreAds | pending — check after April 6 | HIGH |
+
+---
+
 ## Coordination Protocol
 - Update this file after completing each task
 - Post status in #aerocore-ops after each phase completes

@@ -1,109 +1,206 @@
 // Cloudflare Pages Function — Quote Form Submission Handler
-// Receives form data via POST, sends email notification, returns JSON response
+// Accepts multipart/form-data with file attachments.
+// Stores submissions in D1, attachments in Workers KV.
 //
-// Environment variables needed in Cloudflare Pages settings:
-//   RESEND_API_KEY — API key from resend.com (free tier: 100 emails/day)
-//   NOTIFY_EMAIL  — where to send notifications (default: Info@AreoCore.com)
+// Environment bindings:
+//   DB            — Cloudflare D1 database
+//   UPLOADS       — Cloudflare Workers KV namespace
+//   RESEND_API_KEY — Resend email API key
+//   NOTIFY_EMAIL   — notification recipient
+
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+  });
+}
+
+// ── POST handler ────────────────────────────────────────────────
 
 export async function onRequestPost(context) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-  };
-
   try {
-    const body = await context.request.json();
+    const formData = await context.request.formData();
 
-    // Basic validation
-    if (!body.name || !body.email) {
-      return new Response(JSON.stringify({ ok: false, error: 'Name and email are required.' }), {
-        status: 400,
-        headers,
-      });
+    // Parse fields
+    const name = formData.get('name')?.trim() || '';
+    const email = formData.get('email')?.trim() || '';
+    const company = formData.get('company')?.trim() || '';
+    const phone = formData.get('phone')?.trim() || '';
+    const material = formData.get('material')?.trim() || '';
+    const details = formData.get('details')?.trim() || '';
+    const source = formData.get('source')?.trim() || '';
+    const gotcha = formData.get('_gotcha') || '';
+
+    // UTM / attribution
+    const utm_source = formData.get('utm_source')?.trim() || null;
+    const utm_medium = formData.get('utm_medium')?.trim() || null;
+    const utm_campaign = formData.get('utm_campaign')?.trim() || null;
+    const utm_term = formData.get('utm_term')?.trim() || null;
+    const utm_content = formData.get('utm_content')?.trim() || null;
+    const gclid = formData.get('gclid')?.trim() || null;
+
+    // Honeypot — silent success for bots
+    if (gotcha) {
+      return jsonResponse({ ok: true });
     }
 
-    // Simple email format check
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
-      return new Response(JSON.stringify({ ok: false, error: 'Invalid email address.' }), {
-        status: 400,
-        headers,
-      });
+    // Validation
+    if (!name || !email) {
+      return jsonResponse({ ok: false, error: 'Name and email are required.' }, 400);
     }
 
-    // Honeypot check — if _gotcha field is filled, it's a bot
-    if (body._gotcha) {
-      return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return jsonResponse({ ok: false, error: 'Invalid email address.' }, 400);
     }
 
-    const notifyEmail = context.env.NOTIFY_EMAIL || 'Info@AreoCore.com';
-    const apiKey = context.env.RESEND_API_KEY;
+    const now = new Date().toISOString();
 
-    // Build email body
-    const lines = [
-      `Name: ${body.name}`,
-      `Company: ${body.company || '—'}`,
-      `Email: ${body.email}`,
-      `Phone: ${body.phone || '—'}`,
-      `Material: ${body.material || '—'}`,
-      `Details: ${body.details || '—'}`,
-      `Source Page: ${body.source || '—'}`,
-    ];
+    // ── Insert submission into D1 ───────────────────────────────
 
-    if (body.utm && Object.keys(body.utm).length > 0) {
-      lines.push('', '--- Ad Attribution ---');
-      Object.entries(body.utm).forEach(([k, v]) => lines.push(`${k}: ${v}`));
-    }
+    const insertResult = await context.env.DB.prepare(
+      `INSERT INTO submissions
+        (name, company, email, phone, material, details, source_page,
+         utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid,
+         status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)`
+    )
+      .bind(
+        name, company, email, phone, material, details, source,
+        utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid,
+        now, now,
+      )
+      .run();
 
-    lines.push('', `Submitted: ${new Date().toISOString()}`);
+    const submissionId = insertResult.meta.last_row_id;
 
-    const textBody = lines.join('\n');
+    // ── Handle file attachments ─────────────────────────────────
 
-    // Send via Resend if API key is configured
-    if (apiKey) {
-      const emailRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
+    const files = formData.getAll('files');
+    const attachmentErrors = [];
+
+    for (const file of files) {
+      // formData.getAll may return strings for empty fields — skip non-File entries
+      if (!(file instanceof File) || file.size === 0) continue;
+
+      if (file.size > MAX_FILE_SIZE) {
+        attachmentErrors.push(`${file.name} exceeds 25 MB limit`);
+        continue;
+      }
+
+      const kvKey = `submissions/${submissionId}/${crypto.randomUUID()}`;
+      const arrayBuffer = await file.arrayBuffer();
+
+      // Store in KV
+      await context.env.UPLOADS.put(kvKey, arrayBuffer, {
+        metadata: {
+          originalName: file.name,
+          contentType: file.type,
+          submissionId,
         },
-        body: JSON.stringify({
-          from: 'AeroCore Quotes <quotes@areocore.com>',
-          to: [notifyEmail],
-          reply_to: body.email,
-          subject: `Quote Request from ${body.name}${body.company ? ' (' + body.company + ')' : ''}`,
-          text: textBody,
-        }),
       });
 
-      if (!emailRes.ok) {
-        console.error('Resend API error:', await emailRes.text());
-        return new Response(JSON.stringify({ ok: false, error: 'Failed to send notification.' }), {
-          status: 500,
-          headers,
+      // Record in D1
+      await context.env.DB.prepare(
+        `INSERT INTO attachments
+          (submission_id, filename, original_name, content_type, size_bytes, kv_key, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(
+          submissionId,
+          kvKey.split('/').pop(), // UUID filename
+          file.name,
+          file.type || 'application/octet-stream',
+          file.size,
+          kvKey,
+          now,
+        )
+        .run();
+    }
+
+    // ── Send email notification ─────────────────────────────────
+
+    const apiKey = context.env.RESEND_API_KEY;
+    const notifyEmail = context.env.NOTIFY_EMAIL || 'Info@AreoCore.com';
+
+    if (apiKey) {
+      const lines = [
+        `Name: ${name}`,
+        `Company: ${company || '\u2014'}`,
+        `Email: ${email}`,
+        `Phone: ${phone || '\u2014'}`,
+        `Material: ${material || '\u2014'}`,
+        `Details: ${details || '\u2014'}`,
+        `Source Page: ${source || '\u2014'}`,
+      ];
+
+      if (utm_source || utm_medium || utm_campaign) {
+        lines.push('', '--- Ad Attribution ---');
+        if (utm_source) lines.push(`Source: ${utm_source}`);
+        if (utm_medium) lines.push(`Medium: ${utm_medium}`);
+        if (utm_campaign) lines.push(`Campaign: ${utm_campaign}`);
+        if (utm_term) lines.push(`Term: ${utm_term}`);
+        if (utm_content) lines.push(`Content: ${utm_content}`);
+        if (gclid) lines.push(`GCLID: ${gclid}`);
+      }
+
+      const fileCount = files.filter((f) => f instanceof File && f.size > 0).length;
+      if (fileCount > 0) {
+        lines.push('', `Attachments: ${fileCount} file(s)`);
+      }
+
+      lines.push('', `Submitted: ${now}`);
+      lines.push(`Submission ID: ${submissionId}`);
+
+      try {
+        const emailRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'AeroCore Quotes <quotes@areocore.com>',
+            to: [notifyEmail],
+            reply_to: email,
+            subject: `Quote Request from ${name}${company ? ' (' + company + ')' : ''}`,
+            text: lines.join('\n'),
+          }),
         });
+
+        if (!emailRes.ok) {
+          console.error('Resend API error:', await emailRes.text());
+        }
+      } catch (emailErr) {
+        console.error('Email send failed:', emailErr);
       }
     } else {
-      // No email API configured — log to console (visible in Cloudflare dashboard logs)
-      console.log('QUOTE SUBMISSION (no email API configured):', textBody);
+      console.log('QUOTE SUBMISSION (no email API configured):', { name, email, company, submissionId });
     }
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+    // ── Response ────────────────────────────────────────────────
+
+    const response = { ok: true, id: submissionId };
+    if (attachmentErrors.length > 0) {
+      response.warnings = attachmentErrors;
+    }
+
+    return jsonResponse(response);
   } catch (err) {
     console.error('Quote form error:', err);
-    return new Response(JSON.stringify({ ok: false, error: 'Server error.' }), {
-      status: 500,
-      headers,
-    });
+    return jsonResponse({ ok: false, error: 'Server error.' }, 500);
   }
 }
 
-// Handle CORS preflight
+// ── CORS preflight ──────────────────────────────────────────────
+
 export async function onRequestOptions() {
-  return new Response(null, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
+  return new Response(null, { headers: CORS_HEADERS });
 }
