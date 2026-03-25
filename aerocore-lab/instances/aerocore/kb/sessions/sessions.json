@@ -1,13 +1,13 @@
 [
   {
-    "id": "95a9bf37-857a-4820-8628-113fbfa68be2",
-    "claudeSessionId": "b8522471-32ee-4812-842a-07d7aef0f87e",
+    "id": "72348919-27c0-4d95-adb8-49331b557849",
+    "claudeSessionId": "52ae327a-a87e-4950-b47b-9fda35c8c63c",
     "title": "AeroCore — Main",
     "model": "opus",
-    "createdAt": "2026-03-23T18:14:50.069Z",
-    "lastMessageAt": "2026-03-23T20:06:08.324Z",
-    "messageCount": 9,
-    "totalCost": 9.8269453,
+    "createdAt": "2026-03-23T21:19:33.615Z",
+    "lastMessageAt": "2026-03-24T17:45:11.685Z",
+    "messageCount": 27,
+    "totalCost": 32.95231,
     "agentName": "AeroCore",
     "isMain": true
   }

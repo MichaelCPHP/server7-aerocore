@@ -1,13 +1,13 @@
 [
   {
     "id": "df390f8f-a48a-4a27-b4c7-64bfebb34580",
-    "claudeSessionId": "95e75b50-854b-4b69-bf80-f4111f257934",
+    "claudeSessionId": "c0f87ee5-1619-42b3-a90c-66c258b98bfc",
     "title": "AeroCoreAds — Main",
     "model": "opus",
     "createdAt": "2026-03-23T18:16:31.585Z",
-    "lastMessageAt": "2026-03-23T19:38:55.749Z",
-    "messageCount": 7,
-    "totalCost": 11.1999601,
+    "lastMessageAt": "2026-03-24T19:30:35.931Z",
+    "messageCount": 32,
+    "totalCost": 33.5729263,
     "agentName": "AeroCoreAds",
     "isMain": true
   }

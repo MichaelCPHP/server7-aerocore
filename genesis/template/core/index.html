@@ -7,6 +7,31 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>&#10022;</text></svg>">
 <style>
   :root {
+    --bg: #f5f5f7;
+    --surface: #efefef;
+    --surface-hover: #e8e8eb;
+    --border: #d1d1d6;
+    --border-light: #c7c7cc;
+    --gold: #c9a64c;
+    --gold-dim: #9d7f2a;
+    --gold-bright: #e8c65a;
+    --emerald: #4ade80;
+    --text: #1a1a1a;
+    --text-dim: #555555;
+    --text-muted: #999999;
+    --red: #ef4444;
+    --code-bg: #f0f0f2;
+    --sidebar-w: 240px;
+    --radius: 8px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+    --sel-bg: rgba(201,166,76,0.12);
+    --sel-border: rgba(201,166,76,0.4);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease; }
+  body.dark-mode {
     --bg: #08080f;
     --surface: #0e0e1a;
     --surface-hover: #141428;
@@ -21,16 +46,7 @@
     --text-muted: #4a4840;
     --red: #ef4444;
     --code-bg: #0a0a16;
-    --sidebar-w: 240px;
-    --radius: 8px;
-    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
-    --sel-bg: rgba(201,166,76,0.12);
-    --sel-border: rgba(201,166,76,0.4);
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; }
-  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
   #app { display: flex; height: 100vh; }
 
   /* === Sidebar (sessions) === */
@@ -189,10 +205,21 @@
   .thinking-block.collapsed .thinking-body { display: none; }
   .thinking-block.collapsed .toggle-arrow { transform: rotate(-90deg); }
   .thinking-meta { font-size: 9px; color: var(--text-muted); opacity: 0.6; margin-left: auto; font-weight: 400; }
-  .thinking-body { font-size: 11px; color: var(--text-muted); font-family: var(--mono); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .thinking-body { font-size: 11px; color: var(--text-muted); font-family: var(--mono); line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .stream-cursor { display: inline-block; width: 2px; height: 13px; background: var(--gold); margin-left: 2px; vertical-align: text-bottom; animation: blink .8s step-end infinite; }
   @keyframes blink { 50%{opacity:0} }
+  /* Inline streaming phase indicator (inside message area) */
+  .stream-phase { margin: 6px 0; padding: 8px 12px; border-radius: 8px; }
+  .stream-phase-header { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; }
+  .stream-phase-icon { font-size: 12px; animation: spin 1.5s linear infinite; }
+  .stream-phase.waiting .stream-phase-header { color: var(--text-dim); }
+  .stream-phase.thinking { background: rgba(154,123,232,0.06); border-left: 3px solid var(--purple,#9a7be8); }
+  .stream-phase.thinking .stream-phase-header { color: var(--purple,#9a7be8); }
+  .stream-phase.responding { background: rgba(201,166,76,0.06); border-left: 3px solid var(--gold); }
+  .stream-phase.responding .stream-phase-header { color: var(--gold); }
+  .stream-phase.tool { background: rgba(74,222,128,0.06); border-left: 3px solid var(--emerald); }
+  .stream-phase.tool .stream-phase-header { color: var(--emerald); }
 
   /* Context indicator in chat input */
   .context-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--sel-bg); border: 1px solid var(--sel-border); color: var(--gold); padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-bottom: 6px; }
@@ -210,6 +237,60 @@
   .btn-send:disabled { background: var(--border); color: var(--text-muted); cursor: default; }
   .btn-stop { background: var(--red); color: #fff; border: none; padding: 8px 16px; border-radius: var(--radius); font-size: 12px; cursor: pointer; font-family: var(--font); white-space: nowrap; align-self: flex-end; }
   .btn-stop:hover { opacity: 0.85; }
+
+  /* === Task Pane === */
+  #task-pane {
+    width: 220px; min-width: 180px; max-width: 320px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.2s;
+  }
+  #task-pane.collapsed { width: 0; min-width: 0; border-left: none; overflow: hidden; }
+  #task-pane.collapsed > * { display: none; }
+  .task-header {
+    height: 44px; min-height: 44px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 10px; gap: 6px;
+  }
+  .task-header-title { flex: 1; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+  .task-count { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+  .task-toggle-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; }
+  .task-toggle-btn:hover { color: var(--gold); background: var(--surface-hover); }
+  .task-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .task-empty { padding: 20px 12px; text-align: center; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+  .task-item {
+    display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px; margin-bottom: 4px;
+    border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+    transition: all 0.15s; font-size: 11px; line-height: 1.4;
+  }
+  .task-item:hover { background: var(--surface-hover); border-color: var(--border); }
+  .task-item.active { background: rgba(201,166,76,0.08); border-color: var(--gold-dim); }
+  .task-item.selected { background: rgba(201,166,76,0.15); border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold-dim); }
+  .task-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+  .task-text { flex: 1; color: var(--text-dim); word-break: break-word; }
+  .task-item.completed .task-text { color: var(--text-muted); text-decoration: line-through; }
+  .task-item.in_progress .task-text { color: var(--gold); }
+  .task-progress { padding: 8px 12px; border-top: 1px solid var(--border); }
+  .task-progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .task-progress-fill { height: 100%; background: var(--emerald); border-radius: 2px; transition: width 0.3s; }
+  .task-progress-label { font-size: 9px; color: var(--text-muted); margin-top: 3px; text-align: center; }
+  .plan-header {
+    display: flex; align-items: center; padding: 4px 10px; gap: 4px;
+    border-bottom: 1px solid var(--border); min-height: 28px;
+  }
+  .plan-header-title { flex: 1; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+  .plan-body {
+    padding: 8px 10px; font-size: 11px; line-height: 1.5; color: var(--text-dim);
+    max-height: 200px; overflow-y: auto; border-bottom: 1px solid var(--border);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .plan-body.collapsed { display: none; }
+  .plan-body h1, .plan-body h2, .plan-body h3 { font-size: 11px; margin: 4px 0 2px; color: var(--gold); }
+  .plan-body ul, .plan-body ol { margin: 2px 0; padding-left: 16px; }
+  .plan-body li { margin-bottom: 2px; }
+  .task-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 10px; border-bottom: 1px solid var(--border);
+  }
 
   /* === Gutter === */
   #gutter {
@@ -456,8 +537,15 @@
   .welcome h2 { font-size: 16px; font-weight: 600; color: var(--gold); margin-bottom: 6px; }
   .welcome p { font-size: 12px; color: var(--text-dim); max-width: 380px; margin-bottom: 16px; }
   .prompts { display: flex; flex-direction: column; gap: 6px; max-width: 440px; width: 100%; }
-  .prompt-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 8px 12px; border-radius: var(--radius); font-size: 11px; cursor: pointer; text-align: left; font-family: var(--font); }
-  .prompt-btn:hover { border-color: var(--gold-dim); color: var(--gold); background: var(--surface-hover); }
+  .prompt-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 8px 12px; border-radius: var(--radius); font-size: 11px; cursor: pointer; text-align: left; font-family: var(--font); transition: all 0.15s; }
+  .prompt-btn:hover { border-color: var(--gold-dim); color: var(--gold); background: var(--surface-hover); transform: translateY(-1px); }
+  /* AI status badge */
+  .ai-status { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; }
+  .ai-status .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .ai-status.online .status-dot { background: var(--emerald); box-shadow: 0 0 4px var(--emerald); }
+  .ai-status.online { color: var(--emerald); }
+  .ai-status.offline .status-dot { background: var(--red); }
+  .ai-status.offline { color: var(--red); }
 
   /* Scrollbar */
   ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -628,7 +716,9 @@
   .sb-channel-create { display: flex; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   .sb-channel-create input { flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-size: 11px; }
   .sb-channel-create button { background: var(--gold); color: var(--bg); border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+
 </style>
+<script src="/template/core/theme.js" defer></script>
 <link rel="stylesheet" href="/vendor/jspreadsheet/jsuites.min.css">
 <link rel="stylesheet" href="/vendor/jspreadsheet/jspreadsheet.min.css">
 <script src="/vendor/jspreadsheet/jsuites.min.js"></script>
@@ -661,7 +751,7 @@
         <header id="chat-header">
           <button class="btn-hamburger" id="hamburger-open" onclick="toggleSidebar()" title="Open sidebar" style="display:none">&#9776;</button>
           <span class="chat-title" id="chat-title">Jubilee Lab AI</span>
-          <span class="thinking-badge" id="thinking" style="display:none">thinking...</span>
+          <span class="ai-status online" id="ai-status" title="AI agent status"><span class="status-dot"></span><span id="ai-status-label">online</span></span>
           <span class="cost-badge" id="total-cost"></span>
           <span class="context-badge" id="context-badge" style="display:none" title="Context window usage"><span class="context-bar"><span class="context-fill" id="context-fill"></span></span><span id="context-label"></span></span>
           <select class="model-select" id="model-select" onchange="changeModel(this.value)">
@@ -670,6 +760,8 @@
             <option value="haiku">Haiku</option>
           </select>
           <button class="btn-header" id="btn-export" onclick="showExportModal()" title="Export transcript to KB">Export</button>
+          <button class="btn-header" id="btn-tasks-toggle" onclick="toggleTaskPane()" title="Toggle task list">&#9745;</button>
+          <button class="btn-header" id="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme">🌙 Dark</button>
           <button class="btn-header" onclick="switchSbTab('settings')" title="Settings">&#9881;</button>
         </header>
         <div id="messages"></div>
@@ -683,13 +775,40 @@
           <span style="font-size:10px; color:var(--text-muted)" id="input-hint"></span>
         </footer>
       </div>
+      <div id="task-pane">
+        <div class="task-header">
+          <span class="task-header-title">Tasks</span>
+          <span class="task-count" id="task-count"></span>
+          <button class="task-toggle-btn" onclick="toggleTaskPane()" title="Hide tasks">&times;</button>
+        </div>
+        <!-- Plan section -->
+        <div id="plan-section">
+          <div class="plan-header">
+            <span class="plan-header-title">Plan</span>
+            <span id="plan-file-link" style="display:none;font-size:10px;color:var(--gold);cursor:pointer;text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px" title="Open plan file"></span>
+            <button class="task-toggle-btn" id="plan-expand-btn" onclick="togglePlanExpand()" title="Expand/collapse plan" style="display:none">&#9660;</button>
+          </div>
+          <div class="plan-body" id="plan-body"><div class="task-empty" style="padding:8px 0">No plan yet.</div></div>
+        </div>
+        <!-- Tasks section -->
+        <div class="task-section-header" id="task-section-header">
+          <span style="font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px">Task List</span>
+          <span id="tasks-file-link" style="display:none;font-size:10px;color:var(--gold);cursor:pointer;text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px" title="Open tasks file"></span>
+        </div>
+        <div class="task-list" id="task-list">
+          <div class="task-empty" id="task-empty">No active tasks.<br><span style="font-size:10px;opacity:0.7">When the agent creates a task list, it will appear here.</span></div>
+        </div>
+        <div class="task-progress" id="task-progress" style="display:none">
+          <div class="task-progress-bar"><div class="task-progress-fill" id="task-progress-fill"></div></div>
+          <div class="task-progress-label" id="task-progress-label"></div>
+        </div>
+      </div>
       <div class="joint-gutter" id="joint-gutter" style="display:none"></div>
       <div id="joint-panel" style="flex: 0 0 320px;">
         <div class="joint-header">
           <span class="joint-channel-name" id="joint-channel-name">#channel</span>
           <span class="joint-topic" id="joint-topic"></span>
           <span class="joint-members-badge" id="joint-members-badge">0</span>
-          <button class="btn-joint-close" onclick="refreshJointChannel()" title="Refresh" style="font-size:13px">&#8635;</button>
           <button class="btn-joint-close" onclick="closeJointPanel()" title="Close">&times;</button>
         </div>
         <div class="joint-messages" id="joint-messages"></div>
@@ -844,7 +963,8 @@
         <button class="btn-export" onclick="createKbFolderAndExport()" style="padding:6px 12px;white-space:nowrap;font-size:11px">Create &amp; Save</button>
       </div>
       <div class="modal-actions">
-        <button class="btn-cancel" onclick="showExportStep('format')" style="font-size:11px">&larr; Back</button>
+        <button class="btn-cancel" onclick="showExportStep('format')" style="font-size:11px;display:none" id="kb-back-btn">&larr; Back</button>
+        <button class="btn-cancel" onclick="skipExportAndCompact()" style="font-size:11px;display:none" id="kb-skip-btn">Skip &amp; Compact Only</button>
         <button class="btn-cancel" onclick="closeExportModal()">Close</button>
       </div>
     </div>
@@ -900,7 +1020,7 @@
 // State
 // ===========================================================================
 const S = {
-  lab: null, sessions: [], activeId: null, messages: [], streaming: false, streamText: '', thinkingText: '', model: 'opus',
+  lab: null, sessions: [], activeId: null, messages: [], streaming: false, streamText: '', thinkingText: '', model: 'opus', todos: [], plan: null, _selectedTask: null,
   files: [],
   openTabs: [],   // [{path, name, type}]
   activeTab: null, // path
@@ -959,6 +1079,27 @@ async function newSession() {
 
 async function compactSession() {
   if (!S.activeId) return;
+  // Show the compact modal with KB folder picker
+  S._compactMode = true;
+  document.getElementById('export-modal').style.display = 'flex';
+  showExportStep('folder');
+  // Update heading for compact context
+  const h3 = document.querySelector('#export-step-folder h3');
+  const p = document.querySelector('#export-step-folder > p');
+  if (h3) h3.textContent = 'Save & Compact';
+  if (p) p.innerHTML = 'Save session to <code>kb/</code> before compacting for seamless recovery';
+  // Show skip button, hide back button in compact mode
+  const skipBtn = document.getElementById('kb-skip-btn');
+  const backBtn = document.getElementById('kb-back-btn');
+  if (skipBtn) skipBtn.style.display = '';
+  if (backBtn) backBtn.style.display = 'none';
+  // Load KB folders
+  await showKbFolderPicker();
+}
+
+async function skipExportAndCompact() {
+  closeExportModal();
+  S._compactMode = false;
   S.messages.push({ role: 'system', content: 'Compacting session...', timestamp: new Date().toISOString() });
   renderMessages(); scrollBottom();
   try {
@@ -967,7 +1108,66 @@ async function compactSession() {
       S.messages.pop();
       S.messages.push({ role: 'system', content: `Compact failed: ${error}`, timestamp: new Date().toISOString() });
     } else {
-      // Reload messages from server (which now has compacted flags + history preserved)
+      const { data: msgs } = await api('GET', `/api/sessions/${S.activeId}/messages`);
+      S.messages = msgs || [];
+    }
+    renderMessages(); scrollBottom();
+    if (data && data.usage) updateContextBadge(data.usage);
+  } catch (err) {
+    S.messages.pop();
+    S.messages.push({ role: 'system', content: `Compact error: ${err.message}`, timestamp: new Date().toISOString() });
+    renderMessages(); scrollBottom();
+  }
+}
+
+async function doSmartCompact(kbFolder) {
+  closeExportModal();
+  S._compactMode = false;
+  S.messages.push({ role: 'system', content: 'Exporting session and compacting...', timestamp: new Date().toISOString() });
+  renderMessages(); scrollBottom();
+  try {
+    const { data, error } = await api('POST', `/api/sessions/${S.activeId}/smart-compact`, { kbFolder });
+    if (error) {
+      S.messages.pop();
+      S.messages.push({ role: 'system', content: `Smart compact failed: ${error}`, timestamp: new Date().toISOString() });
+      renderMessages(); scrollBottom();
+      return;
+    }
+    // Reload compacted messages
+    const { data: msgs } = await api('GET', `/api/sessions/${S.activeId}/messages`);
+    S.messages = msgs || [];
+    renderMessages(); scrollBottom();
+    if (data && data.usage) updateContextBadge(data.usage);
+    // Show success flash
+    const eb = document.getElementById('btn-export');
+    if (eb) { eb.classList.add('success'); eb.textContent = `Saved to kb/${kbFolder}/`; setTimeout(() => { eb.classList.remove('success'); eb.textContent = 'Export'; }, 3000); }
+    await refreshFiles();
+    // Auto-send recovery message so the agent picks up seamlessly (small delay for UI to settle)
+    if (data && data.kbArticlePath) {
+      await new Promise(r => setTimeout(r, 500));
+      const recoveryMsg = `I had to compact your session. Read the exported KB article at "${data.kbArticlePath}" from the bottom up to recover your memory, then continue from where you left off last.`;
+      const input = document.getElementById('input-box');
+      input.value = recoveryMsg;
+      await sendMessage();
+    }
+  } catch (err) {
+    S.messages.pop();
+    S.messages.push({ role: 'system', content: `Smart compact error: ${err.message}`, timestamp: new Date().toISOString() });
+    renderMessages(); scrollBottom();
+  }
+}
+
+async function skipExportAndCompact() {
+  closeExportModal();
+  S._compactMode = false;
+  S.messages.push({ role: 'system', content: 'Compacting session (without KB export)...', timestamp: new Date().toISOString() });
+  renderMessages(); scrollBottom();
+  try {
+    const { data, error } = await api('POST', `/api/sessions/${S.activeId}/compact`);
+    if (error) {
+      S.messages.pop();
+      S.messages.push({ role: 'system', content: `Compact failed: ${error}`, timestamp: new Date().toISOString() });
+    } else {
       const { data: msgs } = await api('GET', `/api/sessions/${S.activeId}/messages`);
       S.messages = msgs || [];
     }
@@ -995,6 +1195,8 @@ async function openSession(id) {
     const lastWithUsage = [...S.messages].reverse().find(m => m.usage);
     if (lastWithUsage) updateContextBadge(lastWithUsage.usage);
     else document.getElementById('context-badge').style.display = 'none';
+    // Load tasks for this session
+    loadTodos();
     // Connect live session monitor
     connectLiveMonitor(id);
   } catch (err) {
@@ -1068,6 +1270,9 @@ function disconnectLiveMonitor() {
 }
 
 async function deleteSessionById(id) {
+  const session = S.sessions.find(s => s.id === id);
+  const title = session ? (session.title || 'New Analysis') : 'this session';
+  if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
   await api('DELETE', `/api/sessions/${id}`);
   S.sessions = S.sessions.filter(s => s.id !== id);
   if (S.activeId === id) { S.activeId = null; S.messages = []; disconnectLiveMonitor(); }
@@ -1097,6 +1302,16 @@ function showExportModal() {
 function closeExportModal() {
   document.getElementById('export-modal').style.display = 'none';
   showExportStep('format');
+  // Reset compact mode, restore headings and button visibility
+  S._compactMode = false;
+  const h3 = document.querySelector('#export-step-folder h3');
+  const p = document.querySelector('#export-step-folder > p');
+  if (h3) h3.textContent = 'Choose KB Folder';
+  if (p) p.innerHTML = 'Select a folder within <code>kb/</code> to save the article';
+  const skipBtn = document.getElementById('kb-skip-btn');
+  const backBtn = document.getElementById('kb-back-btn');
+  if (skipBtn) skipBtn.style.display = 'none';
+  if (backBtn) backBtn.style.display = '';
 }
 
 function showExportStep(step) {
@@ -1106,6 +1321,9 @@ function showExportStep(step) {
 
 async function showKbFolderPicker() {
   showExportStep('folder');
+  // Toggle Back vs Skip buttons based on mode
+  document.getElementById('kb-back-btn').style.display = S._compactMode ? 'none' : '';
+  document.getElementById('kb-skip-btn').style.display = S._compactMode ? '' : 'none';
   const el = document.getElementById('kb-folder-list');
   el.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:11px">Loading folders...</div>';
   document.getElementById('kb-new-folder-input').value = '';
@@ -1115,10 +1333,11 @@ async function showKbFolderPicker() {
     if (!folders.length) {
       el.innerHTML = '<div style="padding:8px;color:var(--text-dim);font-size:11px">No folders yet — create one below</div>';
     } else {
-      el.innerHTML = folders.map(f =>
-        `<button class="btn-export" onclick="doExport('kb-article','${f}')" style="text-align:left;padding:8px 12px;font-size:12px">` +
-        `<span style="margin-right:6px">&#128193;</span> kb/${f}/</button>`
-      ).join('');
+      el.innerHTML = folders.map(f => {
+        const action = S._compactMode ? `doSmartCompact('${f}')` : `doExport('kb-article','${f}')`;
+        return `<button class="btn-export" onclick="${action}" style="text-align:left;padding:8px 12px;font-size:12px">` +
+          `<span style="margin-right:6px">&#128193;</span> kb/${f}/</button>`;
+      }).join('');
     }
   } catch (e) {
     el.innerHTML = '<div style="padding:8px;color:var(--error);font-size:11px">Failed to load folders</div>';
@@ -1132,7 +1351,11 @@ async function createKbFolderAndExport() {
   try {
     const { data, error } = await api('POST', '/api/kb/folders', { name });
     if (error) throw new Error(error);
-    doExport('kb-article', data.name);
+    if (S._compactMode) {
+      doSmartCompact(data.name);
+    } else {
+      doExport('kb-article', data.name);
+    }
   } catch (e) {
     alert('Failed to create folder: ' + e.message);
   }
@@ -1261,6 +1484,40 @@ function closeTab(filePath) {
   renderTabs(); renderFileTree(); updateContextIndicator();
 }
 
+// Refresh a file in the viewer if it's currently open (triggered by agent file changes)
+async function refreshOpenFile(changedPath) {
+  if (!changedPath) return;
+  // Check both project-relative and system-file paths
+  const fileName = changedPath.split('/').pop();
+  // Find if this file is open in any tab (project path or sys: path)
+  const projectRelative = changedPath.replace(/^\/Volumes\/[^/]+\/[^/]+\/[^/]+\//, '').replace(/^\/Volumes\/.*\/genesis\//, '');
+  const matchingTab = S.openTabs.find(t =>
+    t.path === projectRelative ||
+    t.path === changedPath ||
+    t.path === 'sys:' + changedPath ||
+    t.name === fileName
+  );
+  if (!matchingTab) return;
+  // Clear cache and reload
+  delete S.fileCache[matchingTab.path];
+  if (matchingTab.path.startsWith('sys:')) {
+    const absPath = matchingTab.path.slice(4);
+    const { data } = await api('GET', `/api/system-file?path=${encodeURIComponent(absPath)}`);
+    if (data) { data.path = matchingTab.path; S.fileCache[matchingTab.path] = data; }
+  } else {
+    const { data } = await api('GET', `/api/file?path=${encodeURIComponent(matchingTab.path)}`);
+    if (data) S.fileCache[matchingTab.path] = data;
+  }
+  // If this file is currently active, re-render the viewer
+  if (S.activeTab === matchingTab.path) {
+    const cached = S.fileCache[matchingTab.path];
+    if (cached) {
+      S.viewer = { ...S.viewer, file: matchingTab.path, type: cached.type, headers: cached.headers || [], totalRows: (cached.rows || []).length };
+      renderViewer();
+    }
+  }
+}
+
 function toggleTree() {
   S.treeOpen = !S.treeOpen;
   document.getElementById('file-tree-wrap').classList.toggle('hidden', !S.treeOpen || S.activeView !== 'files');
@@ -1312,9 +1569,11 @@ function openDraftFile(filePath) {
 async function loadDraftsPanel() {
   const panel = document.getElementById('drafts-panel');
   try {
-    const { data } = await api('GET', '/api/file?path=data/drafts.json');
+    const res = await fetch('/api/file?path=data/drafts.json');
+    const json = res.ok ? await res.json() : {};
+    const data = json.data;
     if (!data || !data.content) {
-      panel.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:30px">No drafts.json found.<br><span style="font-size:10px">Use /sources and /draft in the chat to create drafts.</span></div>';
+      panel.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:30px">No drafts yet.<br><span style="font-size:10px">Use /sources and /draft in the chat to create drafts.</span></div>';
       return;
     }
     let drafts;
@@ -1372,7 +1631,7 @@ async function loadDraftsPanel() {
 // ===========================================================================
 function flushThinking() {
   if (S.thinkingText && S.thinkingText.trim()) {
-    S.messages.push({ role: 'thinking', content: S.thinkingText.trim(), timestamp: new Date().toISOString() });
+    S.messages.push({ role: 'thinking', content: S.thinkingText.trim(), timestamp: new Date().toISOString(), _fresh: true });
   }
   S.thinkingText = '';
   const tb = document.getElementById('thinking-block');
@@ -1752,6 +2011,8 @@ const ENFORCEMENT_INFO = {
   'circuit-breaker': { label: 'Circuit Breaker', desc: 'Block repeated failed commands after 5 attempts' },
   'duplicate-detection': { label: 'Duplicate Detection', desc: 'Prevent duplicate events in events.csv' },
   'audit-trail': { label: 'Audit Trail', desc: 'Log all data operations to .audit/operations.jsonl' },
+  'task-discipline': { label: 'Task Discipline', desc: 'Agent must create and track tasks via TodoWrite before doing any work' },
+  'plan-discipline': { label: 'Plan Discipline', desc: 'Agent must write a plan file before starting implementation work' },
 };
 
 async function showSettingsModal() {
@@ -1934,6 +2195,20 @@ async function sendMessage() {
         databases: ssDatabases.map(d => ({ name: d.name, tableCount: d.tableCount, readonly: d.readonly })),
       }
     };
+  } else if (S._selectedTask) {
+    // Task selection
+    vc = {
+      task: {
+        content: S._selectedTask.content,
+        activeForm: S._selectedTask.activeForm,
+        status: S._selectedTask.status,
+        index: S._selectedTask.index,
+      }
+    };
+    // Clear task selection after sending (one-shot context)
+    S._selectedTask = null;
+    updateContextIndicator();
+    renderTaskPane();
   } else if (_sysSelectedItem) {
     // System file browser selection
     vc = {
@@ -1981,9 +2256,9 @@ async function sendMessage() {
         if (!line.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(line.slice(6));
-          if (data.type === 'thinking') { S.thinkingText = (S.thinkingText || '') + (data.content || ''); renderThinking(); scrollBottom(); }
-          if (data.type === 'text') { flushThinking(); fullText += data.content; S.streamText = fullText; renderStreamText(); scrollBottom(); }
-          if (data.type === 'tool_start') {
+          if (data.type === 'thinking') { setStreamPhase('thinking'); S.thinkingText = (S.thinkingText || '') + (data.content || ''); renderThinking(); scrollBottom(); }
+          if (data.type === 'text') { setStreamPhase('responding'); flushThinking(); fullText += data.content; S.streamText = fullText; renderStreamText(); scrollBottom(); }
+          if (data.type === 'tool_start') { setStreamPhase('tool');
             flushThinking();
             // If we were streaming text, save it as a partial message
             if (fullText) {
@@ -1994,6 +2269,9 @@ async function sendMessage() {
             S.messages.push({ role:'system', content:`Using ${data.tool}...`, timestamp:new Date().toISOString(), tool:data.tool, toolId:data.id, pending:true });
             renderMessages(); scrollBottom();
           }
+          if (data.type === 'todos') { S.todos = data.todos || []; renderTaskPane(); }
+          if (data.type === 'plan') { S.plan = { content: data.content, path: data.path }; renderTaskPane(); }
+          if (data.type === 'file_changed') { refreshOpenFile(data.path); }
           if (data.type === 'tool_desc') {
             const pending = S.messages.findLast(m => m.toolId === data.id && m.pending);
             if (pending) { pending.content = data.description; pending.pending = false; }
@@ -2109,20 +2387,23 @@ function renderMessages() {
     document.getElementById('chat-title').textContent = session ? (session.title||'New Analysis') : displayName;
     if (!S.activeId) { el.innerHTML = `<div class="welcome"><div class="welcome-icon">${(S.lab && S.lab.icon) || '&#10022;'}</div><h2>${esc(displayName)}</h2><p>Select or create a session</p></div>`; return; }
     if (!S.messages.length && !S.streaming) {
+      const defaultPrompts = [
+        'What can you help me with?',
+        'Show me the available skills and workflows',
+        'Give me a status overview of this workspace',
+      ];
+      const prompts = (S.lab && S.lab.examplePrompts) || S._dynamicPrompts || defaultPrompts;
+      const promptHtml = prompts.map(p => `<button class="prompt-btn" onclick="usePrompt(this)">${esc(p)}</button>`).join('');
       el.innerHTML = `<div class="welcome"><div class="welcome-icon">${(S.lab && S.lab.icon) || '&#10022;'}</div><h2>${esc(displayName)}</h2>
         <p>${esc((S.lab && S.lab.description) || 'Ask a question to get started. Claude sees what you have selected in the data viewer.')}</p>
-        <div class="prompts">
-          <button class="prompt-btn" onclick="usePrompt(this)">What patterns emerge from the .68 CROSS signature?</button>
-          <button class="prompt-btn" onclick="usePrompt(this)">Analyze the .42 Restoration chain: 1517, 1917, 1967, 2017</button>
-          <button class="prompt-btn" onclick="usePrompt(this)">Run the convergence script and interpret the results</button>
-        </div></div>`; return;
+        <div class="prompts">${promptHtml}</div></div>`; return;
     }
     let html = '';
     for (let i = 0; i < S.messages.length; i++) {
       try { html += renderMsg(S.messages[i]); }
       catch (e) { console.error('renderMsg failed at index', i, S.messages[i], e); html += `<div class="msg" style="color:var(--red)">[Render error at msg ${i}: ${esc(e.message)}]</div>`; }
     }
-    if (S.streamText) html += `<div class="msg"><div class="msg-header"><span class="msg-sender assistant">${S.agentName||'claude'}</span><span class="msg-time" style="color:var(--gold)">streaming</span></div><div class="msg-body md">${md(S.streamText)}<span class="stream-cursor"></span></div></div>`;
+    if (S.streamText) html += `<div class="msg"><div class="msg-header"><span class="msg-sender assistant">${S.agentName||'claude'}</span></div><div class="msg-body md">${md(S.streamText)}<span class="stream-cursor"></span></div></div>`;
     html += '<div id="scroll-anchor"></div>';
     el.innerHTML = html;
   } catch (err) {
@@ -2131,21 +2412,37 @@ function renderMessages() {
   }
 }
 
+function renderPhaseIndicator() {
+  let el = document.getElementById('stream-phase');
+  const anchor = document.getElementById('scroll-anchor');
+  if (!anchor) return;
+  const phase = S._streamPhase || 'waiting';
+  if (!S.streaming) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id='stream-phase'; el.className='stream-phase'; anchor.parentNode.insertBefore(el, anchor); }
+  const labels = { waiting: 'Starting...', thinking: 'Reasoning...', responding: 'Responding...', tool: 'Using tools...' };
+  el.className = `stream-phase ${phase}`;
+  el.innerHTML = `<div class="stream-phase-header"><span class="stream-phase-icon">&#10227;</span> ${labels[phase] || 'Working...'}</div>`;
+}
+
 function renderThinking() {
   let el = document.getElementById('thinking-block');
   const anchor = document.getElementById('scroll-anchor');
   if (!anchor) { renderMessages(); return; }
   if (!S.thinkingText) { if (el) el.remove(); return; }
+  // Remove the generic phase indicator when thinking content arrives
+  const pi = document.getElementById('stream-phase');
+  if (pi) pi.remove();
   if (!el) { el = document.createElement('div'); el.id='thinking-block'; el.className='thinking-block'; anchor.parentNode.insertBefore(el, anchor); }
-  // Show last ~300 chars of thinking to keep it concise
-  const preview = S.thinkingText.length > 300 ? '...' + S.thinkingText.slice(-300) : S.thinkingText;
-  el.innerHTML = `<div class="thinking-header"><span class="thinking-icon">&#9881;</span> Reasoning...</div><div class="thinking-body">${esc(preview)}<span class="stream-cursor"></span></div>`;
+  // Show full thinking text — streams and expands like regular output
+  el.innerHTML = `<div class="thinking-header"><span class="thinking-icon">&#9881;</span> Reasoning...</div><div class="thinking-body">${esc(S.thinkingText)}<span class="stream-cursor"></span></div>`;
 }
 
 function renderStreamText() {
-  // Remove thinking block when text starts
+  // Remove thinking block and phase indicator when text starts
   const tb = document.getElementById('thinking-block');
   if (tb) tb.remove();
+  const pi = document.getElementById('stream-phase');
+  if (pi) pi.remove();
   let sd = document.getElementById('stream-msg');
   const anchor = document.getElementById('scroll-anchor');
   if (!anchor) { renderMessages(); return; }
@@ -2187,7 +2484,9 @@ function renderMsg(msg) {
   if (msg.role==='thinking') {
     const len = (msg.content||'').length;
     const meta = len > 500 ? `${Math.round(len/1000)}k chars` : `${len} chars`;
-    return `<div class="thinking-block saved collapsed"><div class="thinking-header" onclick="toggleThinking(this)"><span class="toggle-arrow">&#9660;</span><span class="thinking-icon-static">&#9881;</span> Reasoning<span class="thinking-meta">${meta}</span></div><div class="thinking-body">${esc(msg.content)}</div></div>`;
+    // Fresh = just created during live stream → start expanded; reloaded = collapsed
+    const collapsed = msg._fresh ? '' : ' collapsed';
+    return `<div class="thinking-block saved${collapsed}"><div class="thinking-header" onclick="toggleThinking(this)"><span class="toggle-arrow">&#9660;</span><span class="thinking-icon-static">&#9881;</span> Reasoning<span class="thinking-meta">${meta}</span></div><div class="thinking-body">${esc(msg.content)}</div></div>`;
   }
 
   // --- Tool output: smart rendering based on content type ---
@@ -2196,34 +2495,64 @@ function renderMsg(msg) {
       return _compactWrap(`<div class="tool-output interactive">${msg.content.replace('<!--html-->','')}</div>`);
     }
     const content = msg.content || '';
+    // Hide generic TodoWrite confirmation — tasks are shown in the tool description
+    if (content.startsWith('Todos have been modified')) return '';
+
+    // Hide ToolSearch results — internal plumbing, not user-facing
+    if (content.trimStart().startsWith('[{"type":"tool_reference"')) return '';
+
+    // Format tool_use_error as a styled warning instead of raw XML
+    if (content.includes('<tool_use_error>') || content.includes('tool_use_error')) {
+      const errText = content.replace(/<\/?tool_use_error>/g, '').trim();
+      return _compactWrap(`<div class="tool-output error-output"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span style="color:var(--red)">&#9888; Tool Error</span></div><pre>${esc(errText)}</pre></div>`);
+    }
+
+    // Format "File created successfully" as a compact success message
+    if (content.startsWith('File created successfully at:') || content.startsWith('File written successfully')) {
+      const filePath = content.replace(/^File (created|written) successfully(?: at)?:\s*/, '').trim();
+      const fileName = filePath.split('/').pop();
+      return _compactWrap(`<div class="tool-event" style="border-left-color:var(--emerald)"><span style="color:var(--emerald)">&#10003;</span> <span style="color:var(--text-dim);font-size:11px">Created <strong>${esc(fileName)}</strong></span></div>`);
+    }
 
     // Agent tool output: parse JSON array [{"type":"text","text":"..."}]
     if (content.trimStart().startsWith('[{') && content.includes('"type"')) {
-      try {
-        const blocks = JSON.parse(content);
-        if (Array.isArray(blocks) && blocks[0] && blocks[0].type === 'text') {
-          let mainText = '';
-          let metaText = '';
-          for (const b of blocks) {
-            if (b.type !== 'text') continue;
-            if (b.text && (b.text.startsWith('agentId:') || b.text.includes('<usage>'))) {
-              // Parse agent metadata
-              const durMatch = b.text.match(/duration_ms:\s*(\d+)/);
-              const tokMatch = b.text.match(/total_tokens:\s*(\d+)/);
-              const toolMatch = b.text.match(/tool_uses:\s*(\d+)/);
-              const parts = [];
-              if (durMatch) parts.push(`${(parseInt(durMatch[1])/1000).toFixed(1)}s`);
-              if (tokMatch) parts.push(`${Math.round(parseInt(tokMatch[1])/1000)}k tokens`);
-              if (toolMatch) parts.push(`${toolMatch[1]} tool calls`);
-              metaText = parts.join(' · ');
-            } else {
-              mainText += (b.text || '');
-            }
+      let blocks = null;
+      try { blocks = JSON.parse(content); } catch {
+        // JSON may be truncated — extract text content with regex fallback
+        const textParts = [];
+        const re = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+        let m;
+        while ((m = re.exec(content))) {
+          try { textParts.push(JSON.parse('"' + m[1] + '"')); } catch { textParts.push(m[1]); }
+        }
+        if (textParts.length) {
+          blocks = textParts.map(t => ({ type: 'text', text: t }));
+        }
+      }
+      if (Array.isArray(blocks) && blocks[0] && (blocks[0].type === 'text' || blocks[0].text)) {
+        let mainText = '';
+        let metaText = '';
+        for (const b of blocks) {
+          if (b.type && b.type !== 'text') continue;
+          const txt = b.text || '';
+          if (txt.startsWith('agentId:') || txt.includes('<usage>')) {
+            const durMatch = txt.match(/duration_ms:\s*(\d+)/);
+            const tokMatch = txt.match(/total_tokens:\s*(\d+)/);
+            const toolMatch = txt.match(/tool_uses:\s*(\d+)/);
+            const parts = [];
+            if (durMatch) parts.push(`${(parseInt(durMatch[1])/1000).toFixed(1)}s`);
+            if (tokMatch) parts.push(`${Math.round(parseInt(tokMatch[1])/1000)}k tokens`);
+            if (toolMatch) parts.push(`${toolMatch[1]} tool calls`);
+            metaText = parts.join(' · ');
+          } else {
+            mainText += txt;
           }
+        }
+        if (mainText) {
           const metaHtml = metaText ? `<div class="agent-meta">${esc(metaText)}</div>` : '';
           return _compactWrap(`<div class="tool-output agent-result"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span>&#129302; Agent result${metaText ? ' — ' + metaText : ''}</span></div><div class="agent-body md">${md(mainText)}</div>${metaHtml}</div>`);
         }
-      } catch {}
+      }
     }
 
     // Error output: highlight actual errors (non-zero exit + traceback/error message)
@@ -2235,7 +2564,7 @@ function renderMsg(msg) {
 
     const lineCount = content.split('\n').length;
     const truncated = content.length > 4000;
-    const collapsed = lineCount > 8 ? ' collapsed' : '';
+    const collapsed = lineCount > 15 ? ' collapsed' : '';
     const meta = `${lineCount} line${lineCount!==1?'s':''}${truncated?' (truncated)':''}`;
     return _compactWrap(`<div class="tool-output${collapsed}"><div class="output-toggle" onclick="toggleOutput(this)"><span class="toggle-arrow">&#9660;</span><span>${meta}</span></div><pre>${esc(content)}</pre></div>`);
   }
@@ -2254,10 +2583,31 @@ function renderMsg(msg) {
     return _compactWrap(`<div class="tool-event agent-cmd"><span class="tool-icon">${toolIcon('Agent')}</span><span class="tool-label">launching sub-agent</span></div>`);
   }
 
+  // --- TodoWrite: render task list inline ---
+  if (msg.tool === 'TodoWrite' && (msg.content||'').includes('\n')) {
+    const lines = msg.content.split('\n');
+    const title = lines[0];
+    const tasks = lines.slice(1).filter(l => l.trim());
+    const taskHtml = tasks.map(t => `<div style="padding:2px 0;font-size:11px;color:var(--text-dim)">${esc(t)}</div>`).join('');
+    return _compactWrap(`<div class="tool-event" style="border-left-color:var(--gold-dim);flex-direction:column;align-items:flex-start"><div style="display:flex;align-items:center;gap:6px"><span class="tool-icon">${toolIcon('TodoWrite')}</span><span class="tool-label">${toolLabel('TodoWrite')}</span>${esc(title)}</div>${taskHtml}</div>`);
+  }
+
+  // --- ToolSearch: hide entirely (internal plumbing) ---
+  if (msg.tool === 'ToolSearch') return '';
+
   // --- Other tool events: labeled with tool type ---
   if (msg.tool) {
     const cls = toolClass(msg.tool);
-    return _compactWrap(`<div class="tool-event ${cls}"><span class="tool-icon">${toolIcon(msg.tool)}</span><span class="tool-label">${toolLabel(msg.tool)}</span>${esc(msg.content)}</div>`);
+    let display = msg.content || '';
+    // Shorten file paths: "Writing /very/long/path/to/file.js" → "Writing file.js"
+    if (['Write', 'Read', 'Edit', 'Glob', 'Grep'].includes(msg.tool)) {
+      display = display.replace(/\/Volumes\/[^\s]+/g, (match) => {
+        const name = match.split('/').pop();
+        return `<span title="${esc(match)}" style="border-bottom:1px dotted var(--text-muted);cursor:help">${name}</span>`;
+      });
+      return _compactWrap(`<div class="tool-event ${cls}"><span class="tool-icon">${toolIcon(msg.tool)}</span><span class="tool-label">${toolLabel(msg.tool)}</span>${display}</div>`);
+    }
+    return _compactWrap(`<div class="tool-event ${cls}"><span class="tool-icon">${toolIcon(msg.tool)}</span><span class="tool-label">${toolLabel(msg.tool)}</span>${esc(display)}</div>`);
   }
 
   // --- Compaction divider ---
@@ -2686,6 +3036,24 @@ function updateContextIndicator() {
   let pills = '';
   let hint = '';
 
+  // Database viewer selection pill
+  if (S.activeView === 'database' && typeof ssActiveTable !== 'undefined' && ssActiveTable) {
+    let dbLabel = ssActiveTable;
+    if (typeof ssJSInstance !== 'undefined' && ssJSInstance) {
+      try {
+        const sel = ssJSInstance.selectedCell;
+        if (sel) {
+          const hdrs = document.getElementById('ss-body')._ssHeaders || [];
+          dbLabel += ` \u2192 ${hdrs[sel[0]] || 'col ' + sel[0]}`;
+          hint = 'Claude sees your database selection';
+        }
+      } catch {}
+    }
+    if (!hint) hint = 'Claude sees this table';
+    const dbName = (typeof ssActiveDb !== 'undefined' && ssActiveDb) ? ssActiveDb.split('/').pop() : 'db';
+    pills += `<span class="context-pill">&#128202; ${esc(dbLabel)} <span style="opacity:0.5;font-size:9px">(${esc(dbName)})</span></span>`;
+  }
+
   // System browser selection pill
   if (_sysSelectedItem) {
     const sLabel = _sysSelectedItem.name;
@@ -2700,6 +3068,14 @@ function updateContextIndicator() {
     const fLabel = S._selectedFolder.name;
     pills += `<span class="context-pill">&#128193; ${esc(fLabel)} <span style="opacity:0.5;font-size:9px">(folder)</span><button onclick="S._selectedFolder=null;renderFileTree();updateContextIndicator()" title="Clear selection">&#x2715;</button></span>`;
     hint = 'Claude sees this folder';
+  }
+
+  // Selected task pill
+  if (S._selectedTask) {
+    const tLabel = S._selectedTask.content.length > 50 ? S._selectedTask.content.slice(0, 47) + '...' : S._selectedTask.content;
+    const statusIcon = S._selectedTask.status === 'completed' ? '&#9989;' : S._selectedTask.status === 'in_progress' ? '&#9203;' : '&#9745;';
+    pills += `<span class="context-pill">${statusIcon} ${esc(tLabel)} <span style="opacity:0.5;font-size:9px">(task)</span><button onclick="clearTaskSelection()" title="Clear task selection">&#x2715;</button></span>`;
+    if (!hint) hint = 'Claude sees this task as context';
   }
 
   // File viewer pill
@@ -2772,14 +3148,31 @@ function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.sc
 function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
 function usePrompt(btn) { const input=document.getElementById('input-box'); input.value=btn.textContent; autoResize(input); input.focus(); }
 function updateStreamingUI() {
-  document.getElementById('thinking').style.display = S.streaming ? '' : 'none';
   document.getElementById('btn-send').style.display = S.streaming ? 'none' : '';
   document.getElementById('btn-stop').style.display = S.streaming ? '' : 'none';
   document.getElementById('btn-send').disabled = S.streaming;
   const input = document.getElementById('input-box');
   input.disabled = S.streaming;
-  input.placeholder = S.streaming ? 'Claude is thinking...' : 'Ask a question...';
-  if (!S.streaming) input.focus();
+  if (S.streaming) {
+    setStreamPhase(S._streamPhase || 'waiting');
+  } else {
+    // Remove all streaming elements (phase indicator, thinking block, stream cursor)
+    const pi = document.getElementById('stream-phase');
+    if (pi) pi.remove();
+    const tb = document.getElementById('thinking-block');
+    if (tb) tb.remove();
+    const sm = document.getElementById('stream-msg');
+    if (sm) sm.remove();
+    input.placeholder = 'Ask a question...';
+    input.focus();
+  }
+}
+function setStreamPhase(phase) {
+  S._streamPhase = phase;
+  const input = document.getElementById('input-box');
+  const labels = { waiting: 'Starting...', thinking: 'Reasoning...', responding: 'Responding...', tool: 'Using tools...' };
+  input.placeholder = 'Claude is ' + (labels[phase] || 'working...').toLowerCase();
+  renderPhaseIndicator();
 }
 async function abortStream() {
   if (!S.activeId || !S.streaming) return;
@@ -3248,6 +3641,176 @@ setInterval(async () => {
 }, 10000);
 
 // ===========================================================================
+// ===========================================================================
+// Task Pane
+// ===========================================================================
+function toggleTaskPane() {
+  const pane = document.getElementById('task-pane');
+  pane.classList.toggle('collapsed');
+  const btn = document.getElementById('btn-tasks-toggle');
+  btn.classList.toggle('active', !pane.classList.contains('collapsed'));
+}
+
+function renderTaskPane() {
+  const list = document.getElementById('task-list');
+  const count = document.getElementById('task-count');
+  const progress = document.getElementById('task-progress');
+  const planSection = document.getElementById('plan-section');
+  const planBody = document.getElementById('plan-body');
+  const taskHeader = document.getElementById('task-section-header');
+  const todos = S.todos || [];
+
+  // Render plan section
+  const planFileLink = document.getElementById('plan-file-link');
+  const planExpandBtn = document.getElementById('plan-expand-btn');
+  const tasksFileLink = document.getElementById('tasks-file-link');
+  if (S.plan && S.plan.content) {
+    // Simple markdown-like rendering
+    let planHtml = esc(S.plan.content)
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+    planBody.innerHTML = planHtml;
+    // Show clickable file link
+    if (planFileLink) {
+      const fileName = S.plan.path ? S.plan.path.split('/').pop() : 'plan.md';
+      planFileLink.textContent = fileName;
+      planFileLink.title = S.plan.path || '';
+      planFileLink.onclick = () => openPlanInBrowser();
+      planFileLink.style.display = '';
+    }
+    if (planExpandBtn) planExpandBtn.style.display = '';
+  } else {
+    planBody.innerHTML = '<div class="task-empty" style="padding:8px 0">No plan yet.</div>';
+    if (planFileLink) planFileLink.style.display = 'none';
+    if (planExpandBtn) planExpandBtn.style.display = 'none';
+  }
+
+  // Show/hide task file link
+  if (tasksFileLink) {
+    if (todos.length) {
+      tasksFileLink.textContent = S.activeId ? S.activeId.slice(0,8) + '-tasks.json' : 'tasks.json';
+      tasksFileLink.onclick = () => openTasksInBrowser();
+      tasksFileLink.style.display = '';
+    } else {
+      tasksFileLink.style.display = 'none';
+    }
+  }
+
+  if (!todos.length) {
+    list.innerHTML = '<div class="task-empty">No active tasks.<br><span style="font-size:10px;opacity:0.7">When the agent creates a task list, it will appear here.</span></div>';
+    count.textContent = '';
+    progress.style.display = 'none';
+    return;
+  }
+
+  const completed = todos.filter(t => t.status === 'completed').length;
+  const total = todos.length;
+  count.textContent = `${completed}/${total}`;
+
+  let html = '';
+  for (let i = 0; i < todos.length; i++) {
+    const t = todos[i];
+    const icon = t.status === 'completed' ? '&#9989;' : t.status === 'in_progress' ? '&#9203;' : '&#11036;';
+    const cls = t.status || 'pending';
+    const isSelected = S._selectedTask && S._selectedTask.index === i;
+    const active = (t.status === 'in_progress' || isSelected) ? ' active' : '';
+    const selectedCls = isSelected ? ' selected' : '';
+    const text = t.content || t.activeForm || '';
+    html += `<div class="task-item ${cls}${active}${selectedCls}" onclick="injectTask(${i})" title="Click to select as context">
+      <span class="task-icon">${icon}</span>
+      <span class="task-text">${esc(text)}</span>
+    </div>`;
+  }
+  list.innerHTML = html;
+
+  // Progress bar
+  const pct = Math.round((completed / total) * 100);
+  document.getElementById('task-progress-fill').style.width = pct + '%';
+  document.getElementById('task-progress-label').textContent = `${completed} of ${total} completed (${pct}%)`;
+  progress.style.display = '';
+}
+
+function injectTask(index) {
+  const t = (S.todos || [])[index];
+  if (!t) return;
+  // Store as selected task context (pill pattern, not text injection)
+  S._selectedTask = { index, content: t.content || '', activeForm: t.activeForm || '', status: t.status || 'pending' };
+  updateContextIndicator();
+  renderTaskPane(); // highlight the selected task
+  document.getElementById('input-box').focus();
+}
+
+function clearTaskSelection() {
+  S._selectedTask = null;
+  updateContextIndicator();
+  renderTaskPane();
+}
+
+// Navigate system file browser to a specific file
+async function navigateToFile(absPath) {
+  if (!absPath) return;
+  const parts = absPath.split('/');
+  const fileName = parts.pop();
+  const dirPath = parts.join('/') || '/';
+  // Switch to files view and focus the system browser
+  switchView('files');
+  // Navigate the system browser to the containing directory
+  await sysBrowse(dirPath);
+  // After browse loads, find and select the file
+  setTimeout(() => {
+    const idx = _sysBrowseItems.findIndex(item => item.name === fileName);
+    if (idx >= 0) sysSelectItem(idx);
+  }, 300);
+}
+
+// Open task list file in the system file browser
+async function openTasksInBrowser() {
+  if (!S.activeId) return;
+  try {
+    const { data } = await api('GET', `/api/sessions/${S.activeId}/task-file`);
+    if (data && data.path) navigateToFile(data.path);
+  } catch (e) { console.warn('Failed to open task file:', e); }
+}
+
+// Open plan file in the system file browser
+async function openPlanInBrowser() {
+  if (!S.plan || !S.plan.path) return;
+  navigateToFile(S.plan.path);
+}
+
+// Toggle plan body expand/collapse
+function togglePlanExpand() {
+  const body = document.getElementById('plan-body');
+  const btn = document.getElementById('plan-expand-btn');
+  body.classList.toggle('collapsed');
+  btn.innerHTML = body.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+}
+
+async function loadTodos() {
+  if (!S.activeId) { S.todos = []; S.plan = null; renderTaskPane(); return; }
+  try {
+    const { data } = await api('GET', `/api/sessions/${S.activeId}/todos`);
+    S.todos = data || [];
+  } catch { S.todos = []; }
+  // Load plan for this session
+  try {
+    const { data } = await api('GET', `/api/sessions/${S.activeId}/plan`);
+    S.plan = data || null;
+  } catch { S.plan = null; }
+  renderTaskPane();
+  // Auto-expand task pane when there are tasks or a plan
+  if ((S.todos.length || S.plan) && document.getElementById('task-pane').classList.contains('collapsed')) {
+    document.getElementById('task-pane').classList.remove('collapsed');
+    const btn = document.getElementById('btn-tasks-toggle');
+    if (btn) btn.classList.add('active');
+  }
+}
+
+// ===========================================================================
 // Lab config loader — adapts UI to the lab instance
 // ===========================================================================
 async function loadLabConfig() {
@@ -3293,16 +3856,44 @@ window.labType = function(text) {
 };
 
 // ===========================================================================
+// AI Status Check
+// ===========================================================================
+async function checkAiStatus() {
+  const badge = document.getElementById('ai-status');
+  const label = document.getElementById('ai-status-label');
+  try {
+    const res = await fetch('/api/ai/status', { signal: AbortSignal.timeout(5000) });
+    const { data } = await res.json();
+    if (data && data.available) {
+      badge.className = 'ai-status online';
+      label.textContent = 'online';
+      badge.title = 'AI agent is available' + (data.model ? ` (${data.model})` : '');
+    } else {
+      badge.className = 'ai-status offline';
+      label.textContent = 'offline';
+      badge.title = 'AI agent is not available — Claude CLI may not be installed';
+    }
+  } catch {
+    badge.className = 'ai-status offline';
+    label.textContent = 'offline';
+    badge.title = 'Could not reach server';
+  }
+}
+
+// ===========================================================================
 // Init
 // ===========================================================================
 loadLabConfig();
 loadSessions();
 loadFiles();
 renderMessages();
+renderTaskPane();
 initGutter();
 initSidebarGutter();
 initFileTreeGutter();
 sysBrowse('/');
+checkAiStatus();
+setInterval(checkAiStatus, 60000); // Re-check every 60s
 renderSbPanel();
 
 // Auto-open database.csv if it exists (skip for instances without an engine)
@@ -3803,7 +4394,6 @@ async function renderSbChannels(el) {
     </li>`;
   }
   html += '</ul>';
-  html += `<div style="padding:4px 8px"><button onclick="renderSbChannels(document.getElementById('sb-panel'))" style="background:none;border:1px solid var(--border);color:var(--text-muted);cursor:pointer;padding:3px 8px;border-radius:4px;font-size:10px;width:100%" title="Refresh channels">&#8635; Refresh</button></div>`;
   html += `<div class="sb-channel-create">
     <input id="sb-new-channel" placeholder="#channel-name" onkeydown="if(event.key==='Enter')sbCreateChannel()">
     <button onclick="sbCreateChannel()">Create</button>
@@ -3856,26 +4446,6 @@ async function openJointChannel(channelName) {
   renderJointMessages();
   connectJointSSE();
   renderSbPanel(); // update sidebar active state
-}
-
-async function refreshJointChannel() {
-  if (!_jointActiveChannel) return;
-  const channelName = _jointActiveChannel.name;
-  disconnectJointSSE();
-  // Reload channel info (refreshes members list for @mention autocomplete)
-  try {
-    const { data } = await api('GET', `/api/joint/channels/${encodeURIComponent(channelName)}`);
-    if (!data.error) _jointActiveChannel = data;
-  } catch {}
-  // Reload all messages from scratch
-  try {
-    const { data } = await api('GET', `/api/joint/channels/${encodeURIComponent(channelName)}/messages?since_seq=0&limit=500`);
-    _jointMessages = data || [];
-    _jointLastSeq = _jointMessages.length > 0 ? _jointMessages[_jointMessages.length - 1].seq : 0;
-  } catch { _jointMessages = []; _jointLastSeq = 0; }
-  document.getElementById('joint-members-badge').textContent = (_jointActiveChannel.members || []).length + ' members';
-  renderJointMessages();
-  connectJointSSE();
 }
 
 function closeJointPanel() {

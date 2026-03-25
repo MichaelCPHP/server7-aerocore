@@ -117,6 +117,8 @@ console.log(`  Port: ${PORT}\n`);
 try { fs.mkdirSync(MESSAGES_DIR, { recursive: true }); } catch (e) { console.error('Failed to create sessions dir:', e.message); }
 try { fs.mkdirSync(OUTPUT_DIR, { recursive: true }); } catch (e) {}
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+try { fs.mkdirSync(path.join(ROOT, 'tasks'), { recursive: true }); } catch (e) {}
+try { fs.mkdirSync(path.join(ROOT, 'plans'), { recursive: true }); } catch (e) {}
 
 // ---------------------------------------------------------------------------
 // Data helpers
@@ -214,7 +216,7 @@ function getFileContent(filePath) {
       const parsed = JSON.parse(result);
       return { type: 'xlsx', name, path: filePath, sheets: parsed.sheets };
     } catch (e) { log('xlsx parse error: ' + e.message); return null; }
-  } else if (['.md', '.txt', '.py', '.sh', '.js', '.json', '.yml', '.yaml', '.cfg', '.ini', '.env', '.gitattributes', ''].includes(ext) || name.startsWith('.')) {
+  } else if (['.md', '.txt', '.py', '.sh', '.js', '.json', '.yml', '.yaml', '.cfg', '.ini', '.env', '.gitattributes', '.html', '.htm', '.css', '.xml', '.sql', '.ts', '.jsx', '.tsx', '.toml', ''].includes(ext) || name.startsWith('.')) {
     const type = ext === '.csv' ? 'csv' : ext === '.json' ? 'json' : ext === '.md' ? 'md' : 'text';
     return { type, name, path: filePath, content: fs.readFileSync(fullPath, 'utf8') };
   }
@@ -244,6 +246,17 @@ function buildViewerContext(vc) {
     lines.push(`When the user asks about viewing data, suggest the Database tab over browsing CSV files.`);
     lines.push(`Output CSVs in output/ are pipeline artifacts rebuilt by /rebuild. The Database tab shows the same data with SQL query support.`);
     lines.push('[END DATABASE VIEWER CONTEXT]');
+    return lines.join('\n');
+  }
+  // Task context (task selected from task pane)
+  if (vc.task) {
+    const t = vc.task;
+    const statusLabel = t.status === 'completed' ? 'COMPLETED' : t.status === 'in_progress' ? 'IN PROGRESS' : 'PENDING';
+    const lines = ['[SELECTED TASK CONTEXT]'];
+    lines.push(`Task: ${t.content}`);
+    lines.push(`Status: ${statusLabel}`);
+    lines.push(`The user selected this task from the task pane. They want to discuss, work on, or get status for this specific task.`);
+    lines.push('[END TASK CONTEXT]');
     return lines.join('\n');
   }
   // System browse context (file or folder selected from system file browser)
@@ -410,13 +423,21 @@ const DEFAULT_SETTINGS = {
     'circuit-breaker': true,
     'duplicate-detection': true,
     'audit-trail': true,
+    'task-discipline': false,
+    'plan-discipline': false,
   },
   circuitBreakerMax: 5,
 };
 
 function loadSettings() {
-  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) }; }
-  catch { return { ...DEFAULT_SETTINGS }; }
+  try {
+    const saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    return {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      enforcements: { ...DEFAULT_SETTINGS.enforcements, ...(saved.enforcements || {}) },
+    };
+  } catch { return { ...DEFAULT_SETTINGS }; }
 }
 
 function saveSettings(settings) {
@@ -963,7 +984,7 @@ function generateMetadata(session, messages) {
   // Title: session title or first user message
   const title = (session.title && session.title !== 'New Analysis')
     ? session.title
-    : (userMsgs[0] || 'Untitled').slice(0, 80);
+    : (userMsgs[0] || 'Untitled').slice(0, 50);
 
   // Tags: extract from signature names, keywords, and patterns
   const sigs = getSignatures();
@@ -1340,7 +1361,7 @@ pruneAgentMemory();
 // System prompt
 // ---------------------------------------------------------------------------
 
-function buildSystemPrompt() {
+function buildSystemPrompt(sessionId) {
   // =====================================================================
   // SELF-DESCRIBING SYSTEM PROMPT
   // Dynamically discovers all capabilities at runtime.
@@ -1485,6 +1506,131 @@ function buildSystemPrompt() {
   if (activeEnforcements.length) {
     lines.push('', 'Active Enforcements:');
     for (const [name] of activeEnforcements) lines.push(`  - ${name}`);
+  }
+
+  // --- 9b. Task Discipline enforcement (structural prompt injection) ---
+  if (settings.enforcements['task-discipline']) {
+    const planActive = settings.enforcements['plan-discipline'];
+    lines.push(
+      '',
+      '## TASK DISCIPLINE ENFORCEMENT — ACTIVE',
+      '',
+      'You are operating under TASK DISCIPLINE mode. This is a MANDATORY structural requirement.',
+      '',
+      '### Rules:',
+    );
+    if (planActive) {
+      lines.push(
+        '1. Plan Discipline is also active — the plan is written FIRST, then tasks are derived from it.',
+        '2. Each micro-step in the plan (1.1, 1.2, 2.1, etc.) becomes ONE task.',
+        '3. Task content MUST reference phase and step: e.g. "Phase 1.2: Add validation to inputs"',
+        '4. Task activeForm MUST mirror: e.g. "Adding validation to inputs (Phase 1.2)"',
+        '5. Complete ALL Phase N tasks before creating/starting Phase N+1 tasks.',
+      );
+    } else {
+      lines.push(
+        '1. BEFORE doing ANY work (reading files, running commands, writing code, analyzing data),',
+        '   you MUST first call the TodoWrite tool to create a task list for the request.',
+        '5. You MUST NOT call any tool other than TodoWrite until you have at least one task defined.',
+        '   This applies to ALL requests — even simple ones. A one-line task like "Check node version" is fine.',
+      );
+    }
+    lines.push(
+      '',
+      '### Execution Rules:',
+      '- Each task MUST be marked as in_progress BEFORE you begin working on it.',
+      '- Only ONE task may be in_progress at any time.',
+      '- A task MUST be marked as completed IMMEDIATELY after you finish it, before starting the next.',
+      '- When ALL tasks are completed, update the task list to reflect full completion before your final response.',
+      '',
+      '### Task Format:',
+      '- content: imperative form ("Fix the auth bug", "Read the config file")',
+      '- activeForm: present continuous ("Fixing the auth bug", "Reading the config file")',
+      '- status: pending | in_progress | completed',
+      '- Break non-trivial requests into 3+ specific, verifiable tasks.',
+      '- For trivial/simple requests, create a SINGLE task.',
+      '',
+      '### Violation Protocol:',
+      'If you find yourself doing work without an active task, STOP immediately.',
+      'Call TodoWrite to create/update your task list, mark the relevant task in_progress, then continue.',
+      'This is not optional — task discipline is a structural guardrail enforced by the platform.',
+    );
+  }
+
+  // --- 9c. Plan Discipline enforcement (structural prompt injection) ---
+  if (settings.enforcements['plan-discipline']) {
+    const planPath = path.join(ROOT, 'plans', (sessionId || 'unknown') + '-plan.md');
+    lines.push(
+      '',
+      '## PLAN DISCIPLINE ENFORCEMENT — ACTIVE',
+      '',
+      'You are operating under PLAN DISCIPLINE mode. This is a MANDATORY structural requirement.',
+      'You MUST plan before you build. Plans drive tasks. Tasks drive execution.',
+      '',
+      '### Workflow (strict order):',
+      '1. RECEIVE the user\'s request — read and understand it fully.',
+      '2. WRITE THE PLAN — use the Write tool to save your plan to: ' + planPath,
+      '3. CREATE TASKS from the plan — call TodoWrite with tasks derived from Phase micro-steps.',
+      '4. EXECUTE — work through tasks one at a time, marking each in_progress then completed.',
+      '5. DEVIATE SAFELY — if you need to change approach, UPDATE the plan file first, then update tasks.',
+      '',
+      '### Plan Format (MANDATORY structure):',
+      '',
+      '```markdown',
+      '# Plan: [Brief title]',
+      '',
+      '## Objective',
+      '[What you are accomplishing and why — 1-3 sentences]',
+      '',
+      '## Phase 1: [Phase Name]',
+      '[Brief description of this phase]',
+      '',
+      '### Steps:',
+      '1.1. [Specific micro-step — actionable, verifiable]',
+      '1.2. [Next micro-step]',
+      '1.3. [Next micro-step]',
+      '',
+      '### Files:',
+      '- path/to/file.js — what changes and why',
+      '',
+      '## Phase 2: [Phase Name]',
+      '[Brief description]',
+      '',
+      '### Steps:',
+      '2.1. [Micro-step]',
+      '2.2. [Micro-step]',
+      '',
+      '### Files:',
+      '- path/to/file.js — what changes',
+      '',
+      '## Phase 3: [Phase Name] (if needed)',
+      '...',
+      '',
+      '## Risks & Considerations',
+      '- [What could go wrong, edge cases, dependencies]',
+      '```',
+      '',
+      '### Task Creation Rules:',
+      '- Each Phase becomes a GROUP of tasks.',
+      '- Each micro-step (1.1, 1.2, 2.1, etc.) becomes ONE task in TodoWrite.',
+      '- Task content MUST reference the phase and step: e.g. "Phase 1.2: Add validation to form inputs"',
+      '- Task activeForm mirrors it: e.g. "Adding validation to form inputs (Phase 1.2)"',
+      '- Complete ALL tasks in Phase 1 before starting Phase 2 tasks.',
+      '- For trivial requests (single-step work), use a single Phase with 1-2 steps.',
+      '',
+      '### Execution Rules:',
+      '- Work through phases IN ORDER. Do not skip ahead.',
+      '- Mark each task in_progress BEFORE starting the work.',
+      '- Mark each task completed IMMEDIATELY after finishing.',
+      '- Only ONE task may be in_progress at a time.',
+      '- When a phase is complete, move to the next phase.',
+      '- When ALL phases are done, update the plan file to mark completion at the top.',
+      '',
+      '### Violation Protocol:',
+      'If you begin implementation work (editing files, running commands, writing code)',
+      'WITHOUT first having written the plan file and created tasks, STOP immediately.',
+      'Write the plan, create tasks, then continue. This is non-negotiable.',
+    );
   }
 
   // --- 10. Instructions (skip if agent rules are loaded — they cover these) ---
@@ -1643,7 +1789,7 @@ function sendToClaudeStream(sessionId, message, onEvent) {
     const session = getSession(sessionId);
     if (!session) { reject(new Error('Session not found')); return; }
 
-    const systemPrompt = buildSystemPrompt();
+    const systemPrompt = buildSystemPrompt(sessionId);
     const escaped = systemPrompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const ts = Date.now();
     const scriptPath = `/tmp/jubilee-lab-claude-${ts}.sh`;
@@ -1739,12 +1885,68 @@ cd "${WORK_DIR}"
               let description = `Using ${meta.name}...`;
               if (meta.name === 'Bash' && input.command) description = `$ ${input.command}`;
               else if (meta.name === 'Read' && input.file_path) description = `Reading ${input.file_path}`;
-              else if (meta.name === 'Write' && input.file_path) description = `Writing ${input.file_path}`;
-              else if (meta.name === 'Edit' && input.file_path) description = `Editing ${input.file_path}`;
+              else if (meta.name === 'Write' && input.file_path) {
+                description = `Writing ${input.file_path}`;
+                // Detect plan file writes and emit plan_update event
+                const plansDir = path.join(ROOT, 'plans');
+                if (input.file_path.startsWith(plansDir) && input.file_path.endsWith('-plan.md')) {
+                  onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: input.file_path, content: input.content || '' }] });
+                }
+                // Emit file_changed event for real-time viewer refresh
+                onEvent({ type: 'assistant', content: [{ type: 'file_changed', path: input.file_path }] });
+              }
+              else if (meta.name === 'Edit' && input.file_path) {
+                description = `Editing ${input.file_path}`;
+                // Detect plan file edits
+                const plansDir2 = path.join(ROOT, 'plans');
+                if (input.file_path.startsWith(plansDir2) && input.file_path.endsWith('-plan.md')) {
+                  try {
+                    const updated = fs.readFileSync(input.file_path, 'utf8');
+                    onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: input.file_path, content: updated }] });
+                  } catch {}
+                }
+                // Emit file_changed event for real-time viewer refresh
+                onEvent({ type: 'assistant', content: [{ type: 'file_changed', path: input.file_path }] });
+              }
               else if (meta.name === 'Grep' && input.pattern) description = `Searching for "${input.pattern}"${input.path ? ' in ' + input.path : ''}`;
               else if (meta.name === 'Glob' && input.pattern) description = `Finding files: ${input.pattern}`;
               else if (meta.name === 'Agent' && input.description) description = `Agent: ${input.description}${input.prompt ? ' — ' + input.prompt.slice(0, 200) : ''}`;
-              else if (meta.name === 'TodoWrite') description = `Updating task list`;
+              else if (meta.name === 'TodoWrite') {
+                description = `Updating task list`;
+                // Extract todo items for display + persist to session
+                if (input.todos && Array.isArray(input.todos)) {
+                  const items = input.todos.map(t => {
+                    const icon = t.status === 'completed' ? '\u2705' : t.status === 'in_progress' ? '\u23f3' : '\u2b1c';
+                    return `${icon} ${t.content || t.activeForm || ''}`;
+                  }).join('\n');
+                  description = `Updating task list:\n${items}`;
+                  // Save todos to session for the task pane
+                  updateSession(sessionId, { todos: input.todos });
+                  // Save todos to a file for file browser navigation
+                  try {
+                    const tasksDir = path.join(ROOT, 'tasks');
+                    if (!fs.existsSync(tasksDir)) fs.mkdirSync(tasksDir, { recursive: true });
+                    fs.writeFileSync(path.join(tasksDir, sessionId + '-tasks.json'), JSON.stringify(input.todos, null, 2));
+                  } catch (e) { log('Save task file error: ' + e.message); }
+                  // Emit todos event so the frontend task pane updates live
+                  onEvent({ type: 'assistant', content: [{ type: 'todos_update', todos: input.todos }] });
+                  // Auto-update plan status when all tasks are completed
+                  const allDone = input.todos.length > 0 && input.todos.every(t => t.status === 'completed');
+                  if (allDone) {
+                    const planFile = path.join(ROOT, 'plans', sessionId + '-plan.md');
+                    try {
+                      if (fs.existsSync(planFile)) {
+                        let planContent = fs.readFileSync(planFile, 'utf8');
+                        // Update status markers in the plan (handles **Status:** or **Status**: variants)
+                        planContent = planContent.replace(/\*\*Status\*?\*?:?\*?\*?\s*(IN PROGRESS|In Progress|in progress)/i, '**Status:** COMPLETE');
+                        planContent = planContent.replace(/^(- \[ \])/gm, '- [x]');
+                        fs.writeFileSync(planFile, planContent);
+                        onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: planFile, content: planContent }] });
+                      }
+                    } catch (e) { log('Plan auto-complete error: ' + e.message); }
+                  }
+                }
+              }
               else if (input.file_path) description = `${meta.name}: ${input.file_path}`;
               // Update the tool_start with full description
               onEvent({ type: 'assistant', content: [{ type: 'tool_description', tool: meta.name, id: meta.id, description }] });
@@ -1861,48 +2063,7 @@ cd "${WORK_DIR}"
 // Rate limiter state for agent responses in channels
 const channelRateLimits = new Map(); // channelId -> { count, resetAt }
 const channelAgentExchanges = new Map(); // channelId -> { lastAgentId, consecutiveCount }
-const channelRecentDigests = new Map(); // channelId -> [last N content hashes] for dedup
 let activeInvocation = false; // concurrency guard — one invoke at a time
-
-// Shared loop-prevention check — used by all invoke paths
-// role param: 'agent', 'user', 'human', 'system' — used to reliably identify human messages
-function shouldBlockInvoke(channelId, senderAgentId, content, role) {
-  const exchanges = channelAgentExchanges.get(channelId) || { lastAgentId: null, consecutiveCount: 0 };
-  // Determine if sender is an agent: check role first (most reliable), fall back to ID heuristics
-  const isHuman = role === 'user' || role === 'human';
-  const isSystem = role === 'system' || senderAgentId === 'system';
-  const isAgent = !isHuman && !isSystem && !!senderAgentId && senderAgentId !== 'user';
-
-  if (isHuman || isSystem) {
-    // Human or system messages always reset the exchange counter
-    exchanges.consecutiveCount = 0;
-  } else if (isAgent && exchanges.lastAgentId && exchanges.lastAgentId !== senderAgentId) {
-    // Different agent responding — this is the ping-pong pattern
-    exchanges.consecutiveCount++;
-  }
-  // Same agent posting again doesn't increment (not a ping-pong)
-  exchanges.lastAgentId = isAgent ? senderAgentId : null;
-  channelAgentExchanges.set(channelId, exchanges);
-
-  if (isAgent && exchanges.consecutiveCount > 4) {
-    log(`Loop prevention: agents exchanged ${exchanges.consecutiveCount} msgs in channel ${channelId}`);
-    return 'exchange_limit';
-  }
-
-  // Content dedup — block if the same content hash appears 2+ times in last 6 messages
-  const hash = require('node:crypto').createHash('md5').update(String(content).slice(0, 2000)).digest('hex');
-  const digests = channelRecentDigests.get(channelId) || [];
-  digests.push(hash);
-  if (digests.length > 6) digests.splice(0, digests.length - 6);
-  channelRecentDigests.set(channelId, digests);
-  const dupeCount = digests.filter(d => d === hash).length;
-  if (dupeCount >= 2) {
-    log(`Loop prevention: duplicate content detected (${dupeCount}x) in channel ${channelId}`);
-    return 'content_duplicate';
-  }
-
-  return false; // OK to proceed
-}
 
 function invokeAgentInChannel(channelId, prompt, senderName) {
   if (activeInvocation) {
@@ -1958,48 +2119,6 @@ function invokeAgentInChannel(channelId, prompt, senderName) {
       const responseText = lastAssistant.content.slice(0, 8000); // Cap channel responses
       log(`Invoke: ${agentName} responding in #${channelName} via main session (${responseText.length} chars)`);
       jointCmd('post', [channelId, AGENT_ID, AGENT_DISPLAY, 'agent', responseText]);
-
-      // --- Cross-server @mention forwarding for invoke responses ---
-      // Without this, agent responses posted via jointCmd bypass the HTTP handler's mention detection
-      // Loop prevention: check before forwarding to prevent agent ping-pong
-      const blocked = shouldBlockInvoke(channelId, AGENT_ID, responseText, 'agent');
-      if (blocked) {
-        log(`Invoke response forwarding blocked (${blocked}) in #${channelName}`);
-        if (blocked === 'exchange_limit') {
-          jointCmd('post', [channelId, 'system', 'System', 'system',
-            `Conversation paused — agents have been going back and forth. @Michael to continue.`]);
-        }
-      } else {
-        try {
-          const members = jointCmd('members', [channelId]);
-          if (Array.isArray(members)) {
-            for (const member of members) {
-              if (String(member.port) === String(PORT)) continue;
-              if (member.agent_id === AGENT_ID) continue;
-              const memberName = member.display_name || '';
-              const firstName = memberName.split(/\s+/)[0] || memberName;
-              const remoteMentionPatterns = [
-                new RegExp(`@${memberName}\\b`, 'i'),
-                firstName !== memberName ? new RegExp(`@${firstName}\\b`, 'i') : null,
-                memberName.length >= 3 ? new RegExp(`@${memberName.slice(0, 3)}\\b`, 'i') : null,
-              ].filter(Boolean);
-              if (remoteMentionPatterns.some(p => p.test(responseText))) {
-                log(`Invoke response @mention: forwarding invoke for ${memberName} to port ${member.port}`);
-                const postData = JSON.stringify({ prompt: responseText, senderName: AGENT_DISPLAY, senderAgentId: AGENT_ID, senderRole: 'agent' });
-                const invokeReq = require('node:http').request({
-                  hostname: 'localhost', port: parseInt(member.port),
-                  path: `/api/joint/channels/${encodeURIComponent(channelId)}/invoke`,
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-                }, () => { /* fire and forget */ });
-                invokeReq.on('error', (e) => log(`Invoke response forward error (port ${member.port}): ${e.message}`));
-                invokeReq.write(postData);
-                invokeReq.end();
-              }
-            }
-          }
-        } catch (e) { log(`Invoke response mention forwarding error: ${e.message}`); }
-      }
     } else {
       log(`Invoke: no assistant response in main session for #${channelName}`);
       jointCmd('post', [channelId, 'system', 'System', 'system', `${agentName} had no response.`]);
@@ -2142,6 +2261,17 @@ const server = http.createServer(async (req, res) => {
   }
   if (!IS_GENESIS && p === '/' && m === 'GET') {
     serveFile(res, path.join(__dirname, 'index.html'), 'text/html; charset=utf-8');
+    return;
+  }
+
+  // --- Template core static files (theme.js, etc.) ---
+  if (p.startsWith('/template/core/') && m === 'GET') {
+    const safePath = p.replace(/\.\./g, '').slice(1);
+    const filePath = path.join(INSTANCE_DIR, safePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
+    const ct = mimeTypes[ext] || 'application/octet-stream';
+    serveFile(res, filePath, ct);
     return;
   }
 
@@ -2446,9 +2576,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- Lab config ---
+  // --- AI status check (cached 60s) ---
+  if (p === '/api/ai/status' && m === 'GET') {
+    if (!global._aiStatusCache || Date.now() - global._aiStatusCache.ts > 60000) {
+      let available = false;
+      try {
+        const { execSync } = require('node:child_process');
+        execSync(`"${CLAUDE_BIN}" --version`, { timeout: 5000, encoding: 'utf8', stdio: 'pipe' });
+        available = true;
+      } catch {}
+      global._aiStatusCache = { available, ts: Date.now() };
+    }
+    json(res, { data: { available: global._aiStatusCache.available, model: LAB.model || 'opus' } });
+    return;
+  }
+
   if (p === '/api/lab' && m === 'GET') {
     const ai = loadAgentIdentity();
-    json(res, { data: { name: LAB.name, description: LAB.description, icon: LAB.icon, color: LAB.color, model: LAB.model, root: FILE_ROOT, server: SERVER_CONFIG.name || null, serverType: SERVER_CONFIG.type || null, serverRole: SERVER_CONFIG.role || SERVER_CONFIG.type || null, serverDisplayName: SERVER_CONFIG.displayName || SERVER_CONFIG.name || null, serverIcon: SERVER_CONFIG.icon || null, serverColor: SERVER_CONFIG.color || null, serverDescription: SERVER_CONFIG.description || null, isGenesis: IS_GENESIS, agentName: ai.name || null, agentIcon: ai.icon || null, agentColor: ai.color || null, plugins: resolvePlugins().map(p => ({ name: p.name, category: p.category })) } });
+    json(res, { data: { name: LAB.name, description: LAB.description, icon: LAB.icon, color: LAB.color, model: LAB.model, root: FILE_ROOT, server: SERVER_CONFIG.name || null, serverType: SERVER_CONFIG.type || null, serverRole: SERVER_CONFIG.role || SERVER_CONFIG.type || null, serverDisplayName: SERVER_CONFIG.displayName || SERVER_CONFIG.name || null, serverIcon: SERVER_CONFIG.icon || null, serverColor: SERVER_CONFIG.color || null, serverDescription: SERVER_CONFIG.description || null, isGenesis: IS_GENESIS, agentName: ai.name || null, agentIcon: ai.icon || null, agentColor: ai.color || null, examplePrompts: LAB.examplePrompts || null, plugins: resolvePlugins().map(p => ({ name: p.name, category: p.category })) } });
     return;
   }
 
@@ -2512,6 +2657,39 @@ const server = http.createServer(async (req, res) => {
     } else {
       json(res, { error: 'Missing messages array' }, 400);
     }
+    return;
+  }
+
+  // --- Todos (task pane) ---
+  const todosMatch = p.match(/^\/api\/sessions\/([^/]+)\/todos$/);
+  if (todosMatch && m === 'GET') {
+    const session = getSession(todosMatch[1]);
+    json(res, { data: session ? (session.todos || []) : [] });
+    return;
+  }
+
+  // --- Plan for session ---
+  const planMatch = p.match(/^\/api\/sessions\/([^/]+)\/plan$/);
+  if (planMatch && m === 'GET') {
+    const sid = planMatch[1];
+    const planFile = path.join(ROOT, 'plans', sid + '-plan.md');
+    try {
+      if (fs.existsSync(planFile)) {
+        const content = fs.readFileSync(planFile, 'utf8');
+        json(res, { data: { content, path: planFile } });
+      } else {
+        json(res, { data: null });
+      }
+    } catch { json(res, { data: null }); }
+    return;
+  }
+
+  // --- Task file path for session ---
+  const taskFileMatch = p.match(/^\/api\/sessions\/([^/]+)\/task-file$/);
+  if (taskFileMatch && m === 'GET') {
+    const sid = taskFileMatch[1];
+    const taskFile = path.join(ROOT, 'tasks', sid + '-tasks.json');
+    json(res, { data: { path: taskFile, exists: fs.existsSync(taskFile) } });
     return;
   }
 
@@ -2690,6 +2868,159 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- Smart Compact (export KB article + compact + recovery instructions) ---
+  const smartCompactMatch = p.match(/^\/api\/sessions\/([^/]+)\/smart-compact$/);
+  if (smartCompactMatch && m === 'POST') {
+    const sessionId = smartCompactMatch[1];
+    const session = getSession(sessionId);
+    if (!session) { json(res, { error: 'Session not found' }, 404); return; }
+    const body = await parseBody(req);
+    const kbFolder = (body.kbFolder || 'analysis').replace(/[^a-zA-Z0-9_-]/g, '-');
+
+    try {
+      // Step 1: Export session as KB article
+      const messages = getMessages(sessionId);
+      if (!messages.length) { json(res, { error: 'No messages to export' }, 400); return; }
+      const title = session.title || 'Untitled Session';
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0];
+      const timeStr = now.toTimeString().split(' ')[0];
+
+      // Build markdown
+      const mdLines = [`# ${title}\n`, `**Session ID**: \`${sessionId}\``, `**Date**: ${dateStr} ${timeStr}`, `**Model**: ${session.model || 'opus'}`, `**Messages**: ${messages.length}`, `**Cost**: $${(session.totalCost || 0).toFixed(2)}`, '', '---', ''];
+      for (const msg of messages) {
+        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+        if (msg.role === 'user') mdLines.push(`## User (${time})\n\n${msg.content}\n\n---\n`);
+        else if (msg.role === 'assistant') mdLines.push(`## Assistant (${time})\n\n${msg.content}\n\n---\n`);
+        else if (msg.role === 'thinking') mdLines.push(`> **Reasoning**: ${msg.content.slice(0, 500)}${msg.content.length > 500 ? '...' : ''}\n`);
+        else if (msg.tool === 'output') mdLines.push(`\`\`\`\n${msg.content.slice(0, 2000)}\n\`\`\`\n`);
+        else if (msg.tool) mdLines.push(`> **${msg.tool}**: ${msg.content}\n`);
+      }
+      const mdContent = mdLines.join('\n');
+
+      // Generate metadata and save KB article
+      const meta = generateMetadata(session, messages);
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+      let filename = `${dateStr}-${slug}.md`;
+      const kbDir = path.join(ROOT, 'kb', kbFolder);
+      fs.mkdirSync(kbDir, { recursive: true });
+      let version = 1;
+      const baseName = `${dateStr}-${slug}`;
+      if (fs.existsSync(path.join(kbDir, filename))) {
+        version = 2;
+        while (fs.existsSync(path.join(kbDir, `${baseName}-v${version}.md`))) version++;
+        filename = `${baseName}-v${version}.md`;
+      }
+      const article = `---\ntitle: "${meta.title || title}"\ndate: ${dateStr}\nsession_id: ${sessionId}\ntags: [${meta.tags || ''}]\nsummary: "${(meta.summary || '').replace(/"/g, '\\"')}"\nexport_version: ${version}\n---\n\n${mdContent}`;
+      const kbArticlePath = path.join(ROOT, 'kb', kbFolder, filename);
+      fs.writeFileSync(kbArticlePath, article);
+      auditLog('smart_compact_export', { sessionId, filename, version, folder: kbFolder });
+      log(`Smart compact: KB article exported to kb/${kbFolder}/${filename}`);
+
+      // Step 2: Compact the session (reuse existing compact logic)
+      const activeMsgs = messages.filter(m => !m.compacted && !m.compactMarker);
+      const allUserMsgs = activeMsgs.filter(m => m.role === 'user').map(m => m.content);
+      const allAssistantMsgs = activeMsgs.filter(m => m.role === 'assistant').map(m => typeof m.content === 'string' ? m.content.slice(0, 800) : '');
+      const toolOutputs = activeMsgs
+        .filter(m => m.tool === 'output' && m.content && m.content.length < 500)
+        .slice(-5)
+        .map(m => m.content.slice(0, 200));
+      const summaryParts = [
+        `[SESSION COMPACTED]`,
+        `Session: ${title} (${sessionId.slice(0,8)})`,
+        `Date: ${dateStr}`,
+        `Messages before compaction: ${activeMsgs.length} (${allUserMsgs.length} user, ${allAssistantMsgs.length} assistant)`,
+        `KB Article: ${kbArticlePath}`,
+        `\nUser messages (full text):\n${allUserMsgs.map(m => `- ${m}`).join('\n').slice(0, 6000)}`,
+        `\n---\nAssistant context (last ${Math.min(5, allAssistantMsgs.length)} responses):\n${allAssistantMsgs.slice(-5).join('\n---\n').slice(0, 4000)}`,
+      ];
+      if (toolOutputs.length) {
+        summaryParts.push(`\n---\nKey tool outputs:\n${toolOutputs.join('\n')}`);
+      }
+      const priorCompacts = messages.filter(m => m.compacted && m.role === 'system' && (m.content || '').startsWith('[SESSION COMPACTED]'));
+      if (priorCompacts.length) {
+        summaryParts.push(`\n---\nPrior session context (${priorCompacts.length} earlier compact(s)):\n${priorCompacts.map(m => m.content).join('\n===\n').slice(0, 3000)}`);
+      }
+      const summary = summaryParts.join('\n');
+
+      updateSession(sessionId, { claudeSessionId: null });
+      const compactedMessages = messages.map(m => m.compacted ? m : { ...m, compacted: true });
+      compactedMessages.unshift(
+        { role: 'system', content: summary, timestamp: now.toISOString(), compacted: true },
+        { role: 'system', content: `Session compacted at ${now.toISOString()}. ${messages.length} messages summarized. KB article saved to kb/${kbFolder}/${filename}`, timestamp: now.toISOString(), compactMarker: true },
+      );
+      fs.writeFileSync(path.join(MESSAGES_DIR, `${sessionId}.json`), JSON.stringify(compactedMessages));
+      log(`Smart compact: session compacted (${messages.length} messages preserved)`);
+
+      // Save to agent memory
+      try {
+        const agentDir = path.join(ROOT, 'agent');
+        if (fs.existsSync(agentDir)) {
+          const memoryDir = path.join(agentDir, 'memory');
+          fs.mkdirSync(memoryDir, { recursive: true });
+          const memSlug = `session_${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, '')}`;
+          const memContent = `---\nname: ${title}\ndescription: Compact summary of session ${sessionId.slice(0,8)} (${dateStr}). KB article: ${kbArticlePath}\ntype: session\n---\n\n${summary}\n`;
+          fs.writeFileSync(path.join(memoryDir, `${memSlug}.md`), memContent);
+          const sessionFiles = fs.readdirSync(memoryDir).filter(f => f.startsWith('session_') && f.endsWith('.md')).sort();
+          while (sessionFiles.length > 10) {
+            const oldest = sessionFiles.shift();
+            try { fs.unlinkSync(path.join(memoryDir, oldest)); } catch {}
+          }
+          rebuildMemoryIndex();
+          _agentMemoryCache = null;
+        }
+      } catch (e) { log(`Smart compact memory save error: ${e.message}`); }
+
+      json(res, { data: { ok: true, kbArticlePath, kbFolder, filename, version, previousMessageCount: messages.length } });
+    } catch (err) {
+      log(`Smart compact error: ${err.message}`);
+      json(res, { error: `Smart compact failed: ${err.message}` }, 500);
+    }
+    return;
+  }
+
+  // --- Task discipline hook endpoint (HTTP hook for Claude Code) ---
+  if (p === '/api/hooks/task-discipline' && m === 'POST') {
+    const settings = loadSettings();
+    if (!settings.enforcements['task-discipline']) {
+      json(res, {}); // no enforcement, pass through
+      return;
+    }
+    const body = await parseBody(req);
+    const toolName = body.tool_name || '';
+    const sessionId = body.session_id || '';
+
+    // If tool is TodoWrite or ToolSearch, always allow (ToolSearch is needed to fetch TodoWrite schema)
+    if (toolName === 'TodoWrite' || toolName === 'ToolSearch') {
+      json(res, {}); // allow
+      return;
+    }
+
+    // Check if this session has any todos defined
+    let hasTodos = false;
+    const allSessions = readSessions();
+    for (const s of allSessions) {
+      if (s.claudeSessionId === sessionId || s.id === sessionId) {
+        hasTodos = Array.isArray(s.todos) && s.todos.length > 0;
+        break;
+      }
+    }
+
+    if (!hasTodos) {
+      // Inject additional context reminding Claude to create tasks first
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: `TASK DISCIPLINE VIOLATION: You called ${toolName} without creating tasks first. You MUST call TodoWrite to define your task plan before using any other tool. Create at least one task now.`,
+        }
+      });
+      return;
+    }
+
+    json(res, {}); // has todos, allow
+    return;
+  }
+
   // --- Chat (SSE) ---
   const chatMatch = p.match(/^\/api\/sessions\/([^/]+)\/chat$/);
   if (chatMatch && m === 'POST') {
@@ -2712,6 +3043,11 @@ const server = http.createServer(async (req, res) => {
 
     const sse = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
+    // SSE keepalive — prevent browser timeout during long AI thinking
+    const keepalive = setInterval(() => {
+      try { res.write(`: keepalive\n\n`); } catch {}
+    }, 5000);
+
     const startTime = Date.now();
     const isFirst = session.messageCount === 0;
 
@@ -2728,7 +3064,10 @@ const server = http.createServer(async (req, res) => {
       if (compactSummaries.length) {
         // Use the most recent one — it already contains prior compact summaries chained inside it
         const latest = compactSummaries[0];
-        compactContext = `[PRIOR SESSION CONTEXT]\nThis session was compacted. The user may reference things from earlier in the conversation. Here is a comprehensive summary of everything discussed:\n\n${latest.content}\n[END PRIOR CONTEXT]\n\n`;
+        // Check if summary includes a KB Article path for enhanced recovery
+        const kbMatch = (latest.content || '').match(/KB Article:\s*(.+)/);
+        const kbRecovery = kbMatch ? `\n\n[KB RECOVERY]\nThe full conversation was exported to: ${kbMatch[1].trim()}\nRead this file from the bottom up (last 200 lines first) to recover your complete working memory. Resume work seamlessly as if the compaction never happened.\n[END KB RECOVERY]` : '';
+        compactContext = `[PRIOR SESSION CONTEXT]\nThis session was compacted. The user may reference things from earlier in the conversation. Here is a comprehensive summary of everything discussed:\n\n${latest.content}${kbRecovery}\n[END PRIOR CONTEXT]\n\n`;
       }
     }
     const enriched = `${compactContext}${vcBlock ? vcBlock + '\n\n' : ''}${context}\n\n---\n\nUser question: ${message}`;
@@ -2755,6 +3094,15 @@ const server = http.createServer(async (req, res) => {
                 sse(ev); sessionBroadcast(sessionId, { type: 'stream', event: ev });
               } else if (block.type === 'tool_result') {
                 const ev = { type: 'tool_output', id: block.tool_use_id, output: block.content };
+                sse(ev); sessionBroadcast(sessionId, { type: 'stream', event: ev });
+              } else if (block.type === 'todos_update') {
+                const ev = { type: 'todos', todos: block.todos };
+                sse(ev); sessionBroadcast(sessionId, { type: 'stream', event: ev });
+              } else if (block.type === 'plan_update') {
+                const ev = { type: 'plan', content: block.content, path: block.path };
+                sse(ev); sessionBroadcast(sessionId, { type: 'stream', event: ev });
+              } else if (block.type === 'file_changed') {
+                const ev = { type: 'file_changed', path: block.path };
                 sse(ev); sessionBroadcast(sessionId, { type: 'stream', event: ev });
               }
             }
@@ -2808,6 +3156,7 @@ const server = http.createServer(async (req, res) => {
       sse({ type: 'error', message: err.message });
     }
 
+    clearInterval(keepalive);
     sse({ type: 'close' });
     res.end();
     return;
@@ -3513,7 +3862,7 @@ const server = http.createServer(async (req, res) => {
     if (format === 'kb-article') {
       // Save as KB article with AI-generated metadata
       const meta = generateMetadata(session, messages);
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
       let filename = `${dateStr}-${slug}.md`;
       const kbFolder = (body.kbFolder || 'analysis').replace(/[^a-zA-Z0-9_-]/g, '-');
       const kbDir = path.join(ROOT, 'kb', kbFolder);
@@ -3538,7 +3887,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Default: markdown download
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
     const filename = `${dateStr}-${slug}.md`;
     auditLog('export_markdown', { sessionId, filename });
     json(res, { data: { content: mdContent, filename, format: 'markdown' } });
@@ -3746,13 +4095,22 @@ const server = http.createServer(async (req, res) => {
           log(`Rate limit hit for #${channelId} — ${waitSec}s remaining`);
           jointCmd('post', [channelId, 'system', 'System', 'system', `Rate limit reached — pausing ${agentName} responses for ${waitSec}s.`]);
         } else {
-          // Shared loop prevention (exchange count + content dedup)
-          const blocked = shouldBlockInvoke(channelId, agentId, content, role);
-          if (blocked) {
-            log(`Loop prevention (${blocked}): blocking invoke in #${channelId}`);
-            if (blocked === 'exchange_limit') {
-              jointCmd('post', [channelId, 'system', 'System', 'system', `Conversation paused — agents have been going back and forth. @Michael to continue.`]);
-            }
+          // Agent-to-agent loop prevention
+          const exchanges = channelAgentExchanges.get(channelId) || { lastAgentId: null, consecutiveCount: 0 };
+          const isAgentSender = role === 'agent';
+          if (isAgentSender && exchanges.lastAgentId && exchanges.lastAgentId !== agentId) {
+            // This is an agent responding to another agent
+            exchanges.consecutiveCount++;
+          } else if (!isAgentSender) {
+            // Human message — reset counter
+            exchanges.consecutiveCount = 0;
+          }
+          exchanges.lastAgentId = agentId;
+          channelAgentExchanges.set(channelId, exchanges);
+
+          if (isAgentSender && exchanges.consecutiveCount > 2) {
+            log(`Loop prevention: agents exchanged ${exchanges.consecutiveCount} messages in #${channelId}`);
+            jointCmd('post', [channelId, 'system', 'System', 'system', `Conversation paused — agents have exchanged ${exchanges.consecutiveCount} messages. @Michael to continue.`]);
           } else {
             // Update rate limiter
             if (!limit || now >= limit.resetAt) {
@@ -3787,7 +4145,7 @@ const server = http.createServer(async (req, res) => {
             ].filter(Boolean);
             if (remoteMentionPatterns.some(p => p.test(content))) {
               log(`Cross-server @mention: forwarding invoke for ${memberName} to port ${member.port}`);
-              const postData = JSON.stringify({ prompt: content, senderName: displayName, senderAgentId: agentId, senderRole: role || 'agent' });
+              const postData = JSON.stringify({ prompt: content, senderName: displayName });
               const invokeReq = http.request({
                 hostname: 'localhost', port: parseInt(member.port),
                 path: `/api/joint/channels/${encodeURIComponent(channelId)}/invoke`,
@@ -3841,21 +4199,6 @@ const server = http.createServer(async (req, res) => {
     if (sub === 'invoke' && m === 'POST') {
       const body = await parseBody(req);
       const prompt = body.prompt || 'Please respond to the conversation in this joint channel.';
-      const senderAgent = body.senderAgentId || body.senderName || null;
-
-      // Loop prevention — check before accepting the invoke
-      const senderRole = body.senderRole || 'agent';
-      const blocked = shouldBlockInvoke(channelId, senderAgent, prompt, senderRole);
-      if (blocked) {
-        log(`Invoke blocked (${blocked}) for ${AGENT_DISPLAY} in channel ${channelId}`);
-        json(res, { data: { ok: false, blocked, message: `Invoke blocked by loop prevention (${blocked})` } });
-        if (blocked === 'exchange_limit') {
-          jointCmd('post', [channelId, 'system', 'System', 'system',
-            `Conversation paused — agents have been going back and forth. @Michael to continue.`]);
-        }
-        return;
-      }
-
       // Post system message and respond immediately (don't block)
       jointCmd('post', [channelId, 'system', 'System', 'system', `Invoking ${AGENT_DISPLAY}...`]);
       json(res, { data: { ok: true, message: `Invocation sent to ${AGENT_DISPLAY}` } });
