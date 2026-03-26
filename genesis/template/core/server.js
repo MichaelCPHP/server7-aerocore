@@ -43,6 +43,7 @@ const OUTPUT_DIR = path.join(ROOT, LAB.outputDir || 'output');
 const SESSIONS_DIR = path.join(ROOT, LAB.kbDir || 'kb', 'sessions');
 const SESSIONS_FILE = path.join(SESSIONS_DIR, 'sessions.json');
 const MESSAGES_DIR = path.join(SESSIONS_DIR, 'messages');
+const PROJECTS_DIR = path.join(ROOT, 'projects');
 const CLAUDE_BIN = process.env.CLAUDE_BIN || (() => {
   const { execSync } = require('node:child_process');
   try { return execSync('which claude', { encoding: 'utf8' }).trim(); }
@@ -117,6 +118,7 @@ console.log(`  Port: ${PORT}\n`);
 try { fs.mkdirSync(MESSAGES_DIR, { recursive: true }); } catch (e) { console.error('Failed to create sessions dir:', e.message); }
 try { fs.mkdirSync(OUTPUT_DIR, { recursive: true }); } catch (e) {}
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+try { fs.mkdirSync(PROJECTS_DIR, { recursive: true }); } catch (e) {}
 try { fs.mkdirSync(path.join(ROOT, 'tasks'), { recursive: true }); } catch (e) {}
 try { fs.mkdirSync(path.join(ROOT, 'plans'), { recursive: true }); } catch (e) {}
 
@@ -274,6 +276,31 @@ function buildViewerContext(vc) {
     lines.push('[END SYSTEM BROWSE CONTEXT]');
     return lines.join('\n');
   }
+  // Session reference context (session injected from sidebar right-click)
+  if (vc.sessionRef) {
+    const sr = vc.sessionRef;
+    const lines = ['[SESSION REFERENCE CONTEXT]'];
+    lines.push(`The user is referencing another session:`);
+    lines.push(`  Session ID: ${sr.id}`);
+    lines.push(`  Title: ${sr.title}`);
+    lines.push(`  Model: ${sr.model || 'unknown'}`);
+    if (sr.projectName) lines.push(`  Project: ${sr.projectName} (${sr.projectId})`);
+    // Try to load recent messages from that session for context
+    try {
+      const refMsgs = getMessages(sr.id);
+      if (refMsgs && refMsgs.length) {
+        const recent = refMsgs.slice(-5);
+        lines.push(`  Recent messages (last ${recent.length}):`);
+        for (const m of recent) {
+          const preview = typeof m.content === 'string' ? m.content.slice(0, 150) : '';
+          lines.push(`    [${m.role}] ${preview}${preview.length >= 150 ? '...' : ''}`);
+        }
+      }
+    } catch (e) { /* ignore */ }
+    lines.push('The user may want to discuss, reference, or continue work from that session.');
+    lines.push('[END SESSION REFERENCE CONTEXT]');
+    return lines.join('\n');
+  }
   // Folder context (folder selected in project file tree)
   if (vc.folder) {
     const lines = ['[VIEWER CONTEXT]'];
@@ -381,7 +408,7 @@ function deleteSession(id) {
 // Projects persistence
 // ---------------------------------------------------------------------------
 
-const PROJECTS_FILE = path.join(SESSIONS_DIR, 'projects.json');
+const PROJECTS_FILE = path.join(PROJECTS_DIR, 'projects.json');
 
 function readProjects() {
   try { return JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8')); }
@@ -389,25 +416,163 @@ function readProjects() {
 }
 function writeProjects(p) { fs.writeFileSync(PROJECTS_FILE, JSON.stringify(p, null, 2)); }
 
+function getProject(projectId) {
+  if (!projectId) return null;
+  return readProjects().find(pr => pr.id === projectId) || null;
+}
+
 function getProjectName(projectId) {
-  if (!projectId) return '';
-  const projects = readProjects();
-  const p = projects.find(pr => pr.id === projectId);
+  const p = getProject(projectId);
   return p ? p.name : '';
 }
 
 function createProject(name, description = '') {
   const projects = readProjects();
+  const id = randomUUID();
+  const projectDir = path.join(PROJECTS_DIR, id);
+  const jobsDir = path.join(projectDir, 'jobs');
+  fs.mkdirSync(jobsDir, { recursive: true });
+
   const project = {
-    id: randomUUID(),
+    id,
     name: name || 'Untitled Project',
     description,
     createdAt: new Date().toISOString(),
   };
+
+  // Write project.md
+  const mdContent = `# ${project.name}\n\n${description || 'No description yet.'}\n\nCreated: ${project.createdAt}\n`;
+  fs.writeFileSync(path.join(projectDir, 'project.md'), mdContent);
+
+  // Create project SQLite database with default tables
+  const dbPath = path.join(projectDir, 'project.db');
+  try {
+    const DATABASE_MANAGER_PY = path.join(__dirname, 'database_manager.py');
+    require('node:child_process').execSync(
+      `python3 "${DATABASE_MANAGER_PY}" "${dbPath}" create-db`,
+      { encoding: 'utf8', timeout: 10000 }
+    );
+    // Create a default 'notes' table for project-level notes
+    require('node:child_process').execSync(
+      `python3 "${DATABASE_MANAGER_PY}" "${dbPath}" create notes title content status created_at`,
+      { encoding: 'utf8', timeout: 10000 }
+    );
+    log(`Project database created: ${dbPath}`);
+  } catch (e) {
+    log(`Warning: Failed to create project database: ${e.message}`);
+  }
+
   projects.push(project);
   writeProjects(projects);
-  log(`Project created: ${project.name}`);
+  log(`Project created: ${project.name} (${id.slice(0,8)})`);
   return project;
+}
+
+function updateProject(projectId, updates) {
+  const projects = readProjects();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx === -1) return null;
+  Object.assign(projects[idx], updates);
+  writeProjects(projects);
+  return projects[idx];
+}
+
+function deleteProject(projectId) {
+  const projects = readProjects();
+  const filtered = projects.filter(p => p.id !== projectId);
+  if (filtered.length === projects.length) return false;
+  writeProjects(filtered);
+  // Unlink sessions from this project
+  const sessions = readSessions();
+  for (const s of sessions) {
+    if (s.projectId === projectId) delete s.projectId;
+  }
+  writeSessions(sessions);
+  log(`Project deleted: ${projectId}`);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Jobs persistence — scoped to projects
+// ---------------------------------------------------------------------------
+
+function getJobsFile(projectId) {
+  return path.join(PROJECTS_DIR, projectId, 'jobs.json');
+}
+
+function readJobs(projectId) {
+  try { return JSON.parse(fs.readFileSync(getJobsFile(projectId), 'utf8')); }
+  catch (e) { if (e.code !== 'ENOENT') log(`readJobs: ${e.message}`); return []; }
+}
+function writeJobs(projectId, jobs) {
+  const dir = path.join(PROJECTS_DIR, projectId);
+  fs.mkdirSync(path.join(dir, 'jobs'), { recursive: true });
+  fs.writeFileSync(getJobsFile(projectId), JSON.stringify(jobs, null, 2));
+}
+
+function getJob(projectId, jobId) {
+  return readJobs(projectId).find(j => j.id === jobId) || null;
+}
+
+function createJob(projectId, sessionId, title = 'New Job') {
+  const jobs = readJobs(projectId);
+  const id = randomUUID();
+  const jobDir = path.join(PROJECTS_DIR, projectId, 'jobs');
+  fs.mkdirSync(jobDir, { recursive: true });
+
+  const job = {
+    id,
+    projectId,
+    sessionId,
+    title,
+    status: 'active',     // active | completed | paused
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+    collaborators: [],     // [{ agentId, name, port, role, invitedAt }]
+  };
+
+  jobs.push(job);
+  writeJobs(projectId, jobs);
+  log(`Job created: ${title} (${id.slice(0,8)}) in project ${projectId.slice(0,8)}`);
+  return job;
+}
+
+function updateJob(projectId, jobId, updates) {
+  const jobs = readJobs(projectId);
+  const idx = jobs.findIndex(j => j.id === jobId);
+  if (idx === -1) return null;
+  Object.assign(jobs[idx], updates);
+  if (updates.status === 'completed' && !jobs[idx].completedAt) {
+    jobs[idx].completedAt = new Date().toISOString();
+  }
+  writeJobs(projectId, jobs);
+  return jobs[idx];
+}
+
+function getJobPlanPath(projectId, jobId) {
+  return path.join(PROJECTS_DIR, projectId, 'jobs', `${jobId}-plan.md`);
+}
+
+function getJobTasksPath(projectId, jobId) {
+  return path.join(PROJECTS_DIR, projectId, 'jobs', `${jobId}-tasks.json`);
+}
+
+function getJobPlan(projectId, jobId) {
+  try { return fs.readFileSync(getJobPlanPath(projectId, jobId), 'utf8'); }
+  catch (e) { return null; }
+}
+
+function getJobTasks(projectId, jobId) {
+  try { return JSON.parse(fs.readFileSync(getJobTasksPath(projectId, jobId), 'utf8')); }
+  catch (e) { return []; }
+}
+
+function getSessionJobs(projectId, sessionId) {
+  return readJobs(projectId).filter(j => j.sessionId === sessionId);
+}
+
+function getActiveJob(projectId, sessionId) {
+  return readJobs(projectId).find(j => j.sessionId === sessionId && j.status === 'active') || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -423,8 +588,10 @@ const DEFAULT_SETTINGS = {
     'circuit-breaker': true,
     'duplicate-detection': true,
     'audit-trail': true,
-    'task-discipline': false,
-    'plan-discipline': false,
+    'task-discipline': true,
+    'plan-discipline': true,
+    'deploy-guard': true,
+    'job-discipline': true,
   },
   circuitBreakerMax: 5,
 };
@@ -1039,6 +1206,54 @@ function appendMessage(sessionId, msg) {
 }
 
 // ---------------------------------------------------------------------------
+// Agent Inbox — cross-session message queue (file-based)
+// ---------------------------------------------------------------------------
+const INBOX_FILE = path.join(ROOT, 'agent', 'inbox.json');
+
+function readInbox() {
+  try { return JSON.parse(fs.readFileSync(INBOX_FILE, 'utf8')); }
+  catch { return []; }
+}
+
+function writeInbox(messages) {
+  try { fs.mkdirSync(path.dirname(INBOX_FILE), { recursive: true }); } catch {}
+  fs.writeFileSync(INBOX_FILE, JSON.stringify(messages, null, 2));
+}
+
+function addToInbox(entry) {
+  const inbox = readInbox();
+  entry.id = randomUUID();
+  entry.receivedAt = new Date().toISOString();
+  entry.delivered = false;
+  inbox.push(entry);
+  writeInbox(inbox);
+  return entry;
+}
+
+function getUndeliveredInbox() {
+  return readInbox().filter(m => !m.delivered);
+}
+
+function markInboxDelivered(ids) {
+  const inbox = readInbox();
+  let changed = false;
+  for (const msg of inbox) {
+    if (ids.includes(msg.id)) { msg.delivered = true; msg.deliveredAt = new Date().toISOString(); changed = true; }
+  }
+  if (changed) writeInbox(inbox);
+  return changed;
+}
+
+function clearInbox(onlyDelivered = false) {
+  if (onlyDelivered) {
+    const inbox = readInbox().filter(m => !m.delivered);
+    writeInbox(inbox);
+  } else {
+    writeInbox([]);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Live session SSE — allows external clients to monitor sessions in real-time
 // ---------------------------------------------------------------------------
 const sessionListeners = new Map(); // sessionId → Set<res>
@@ -1633,6 +1848,116 @@ function buildSystemPrompt(sessionId) {
     );
   }
 
+  // --- 9d. Job Discipline enforcement (structural prompt injection) ---
+  if (settings.enforcements['job-discipline']) {
+    const session = getSession(sessionId);
+    const projectId = session ? session.projectId : null;
+    const project = projectId ? getProject(projectId) : null;
+    const activeJob = (projectId && sessionId) ? getActiveJob(projectId, sessionId) : null;
+    const completedJobs = (projectId && sessionId) ? getSessionJobs(projectId, sessionId).filter(j => j.status === 'completed') : [];
+
+    if (project) {
+      lines.push(
+        '',
+        '## JOB DISCIPLINE ENFORCEMENT — ACTIVE',
+        '',
+        'You are operating under JOB DISCIPLINE mode. This is a MANDATORY structural requirement.',
+        'The strict pipeline is: **Job → Plan → Tasks → Execute**. No shortcuts allowed.',
+        'PreToolUse hooks will BLOCK tool calls that violate the pipeline.',
+        '',
+        '### Current Context:',
+        `- **Project:** ${project.name} (${projectId})`,
+        `- **Session:** ${sessionId}`,
+        `- **Active Job:** ${activeJob ? activeJob.title + ' (' + activeJob.id + ')' : 'NONE'}`,
+        `- **Completed Jobs:** ${completedJobs.length}`,
+      );
+
+      if (activeJob) {
+        const jobPlanPath = getJobPlanPath(projectId, activeJob.id);
+        const hasPlan = fs.existsSync(jobPlanPath);
+        const hasTodos = Array.isArray(session ? session.todos : null) && session.todos.length > 0;
+        const allDone = hasTodos && session.todos.every(t => t.status === 'completed');
+
+        lines.push(
+          '',
+          '### Pipeline Status:',
+          `  1. Job: ✅ "${activeJob.title}"`,
+          `  2. Plan: ${hasPlan ? '✅ Written' : '❌ NOT WRITTEN — do this FIRST'}`,
+          `  3. Tasks: ${hasTodos ? (allDone ? '✅ All completed' : '✅ Created') : '❌ NOT CREATED' + (hasPlan ? ' — do this NEXT' : '')}`,
+          `  4. Execute: ${(hasPlan && hasTodos) ? '✅ Ready to work' : '🚫 BLOCKED until plan + tasks exist'}`,
+        );
+
+        lines.push(
+          '',
+          '### Job File Paths (MANDATORY — use these, NOT session-level paths):',
+          `- **Plan file:** ${jobPlanPath}`,
+          '',
+          '### Strict Rules:',
+          '1. **FIRST TOOL CALL after creating a job MUST be Write** to save your plan to the exact path above.',
+          '   This is NOT optional. The plan pane in the UI reads this file. If you skip it, the user sees "No plan yet."',
+          '   Do NOT use plans/{sessionId}-plan.md — that is the old path.',
+          '2. Plan must have Phases with numbered micro-steps (1.1, 1.2, 2.1, etc.)',
+          '3. **SECOND step: call TodoWrite** to create tasks derived from each micro-step in the plan.',
+          '4. Only AFTER the plan file is written AND tasks exist may you begin implementation.',
+          '   If you call any tool (Bash, Edit, Grep, etc.) before writing the plan file, you are violating discipline.',
+          '5. Follow tasks in order: mark in_progress → do work → mark completed.',
+          '6. When ALL tasks are complete, close the job by running:',
+          `   curl -s http://localhost:${PORT}/api/projects/${projectId}/jobs/${activeJob.id} -X PATCH -H "Content-Type: application/json" -d \'{"status":"completed"}\'`,
+          '',
+          '### Mid-Job Updates:',
+          '- You CAN update the plan file and tasks mid-job if requirements change.',
+          '- Add new tasks via TodoWrite if you discover additional work.',
+          '- Update the plan file with new phases if scope changes.',
+        );
+
+        // If all tasks are done, prompt the agent to close the job
+        if (allDone) {
+          lines.push(
+            '',
+            '### ⚠️ ALL TASKS COMPLETE — Close this job now.',
+            `Run: curl -s http://localhost:${PORT}/api/projects/${projectId}/jobs/${activeJob.id} -X PATCH -H "Content-Type: application/json" -d \'{"status":"completed"}\'`,
+            'After closing, if the user gives you more work, create a NEW job for it.',
+          );
+        }
+      } else {
+        lines.push(
+          '',
+          '### Pipeline Status:',
+          '  1. Job: ❌ NO ACTIVE JOB',
+          '  2. Plan: 🚫 BLOCKED',
+          '  3. Tasks: 🚫 BLOCKED',
+          '  4. Execute: 🚫 BLOCKED',
+          '',
+          '### CRITICAL — You MUST create a job before doing any work.',
+          `Create a job by running this Bash command:`,
+          `  curl -s http://localhost:${PORT}/api/sessions/${sessionId}/jobs -X POST -H "Content-Type: application/json" -d \'{"title":"YOUR JOB TITLE HERE"}\'`,
+          '',
+          'Replace YOUR JOB TITLE HERE with a short descriptive title for the work.',
+          'The title should describe what the user is asking you to do.',
+          'After creating the job, proceed to write the plan, create tasks, then execute.',
+        );
+
+        if (completedJobs.length) {
+          lines.push(
+            '',
+            '### Previous Jobs in This Session:',
+            ...completedJobs.map(j => `- ✅ ${j.title} (completed ${j.completedAt ? new Date(j.completedAt).toLocaleTimeString() : ''})`),
+            '',
+            'The user is giving you new instructions. Create a NEW job for this new work.',
+          );
+        }
+      }
+    } else if (!projectId) {
+      lines.push(
+        '',
+        '## JOB DISCIPLINE — SESSION NOT IN PROJECT',
+        '',
+        'This session is not assigned to a project. Job discipline requires a project.',
+        'Ask the user which project this session belongs to, or create a new project.',
+      );
+    }
+  }
+
   // --- 10. Instructions (skip if agent rules are loaded — they cover these) ---
   if (!agent.rules) {
     lines.push(
@@ -1802,6 +2127,9 @@ function sendToClaudeStream(sessionId, message, onEvent) {
 
     const script = `#!/bin/bash
 unset CLAUDECODE CLAUDE_CODE
+export LAB_PORT="${PORT}"
+export GENESIS_DIR="${GENESIS_DIR}"
+export LAB_INSTANCE="${INSTANCE_DIR}"
 cd "${WORK_DIR}"
 "${CLAUDE_BIN}" -p --output-format stream-json --verbose --include-partial-messages --permission-mode bypassPermissions --model ${model} ${resumeFlag} ${systemFlag}
 `;
@@ -1892,6 +2220,10 @@ cd "${WORK_DIR}"
                 if (input.file_path.startsWith(plansDir) && input.file_path.endsWith('-plan.md')) {
                   onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: input.file_path, content: input.content || '' }] });
                 }
+                // Also detect job plan writes: projects/{id}/jobs/{id}-plan.md
+                if (input.file_path.includes('/jobs/') && input.file_path.endsWith('-plan.md')) {
+                  onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: input.file_path, content: input.content || '' }] });
+                }
                 // Emit file_changed event for real-time viewer refresh
                 onEvent({ type: 'assistant', content: [{ type: 'file_changed', path: input.file_path }] });
               }
@@ -1900,6 +2232,13 @@ cd "${WORK_DIR}"
                 // Detect plan file edits
                 const plansDir2 = path.join(ROOT, 'plans');
                 if (input.file_path.startsWith(plansDir2) && input.file_path.endsWith('-plan.md')) {
+                  try {
+                    const updated = fs.readFileSync(input.file_path, 'utf8');
+                    onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: input.file_path, content: updated }] });
+                  } catch {}
+                }
+                // Also detect job plan edits: projects/{id}/jobs/{id}-plan.md
+                if (input.file_path.includes('/jobs/') && input.file_path.endsWith('-plan.md')) {
                   try {
                     const updated = fs.readFileSync(input.file_path, 'utf8');
                     onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: input.file_path, content: updated }] });
@@ -1928,22 +2267,43 @@ cd "${WORK_DIR}"
                     if (!fs.existsSync(tasksDir)) fs.mkdirSync(tasksDir, { recursive: true });
                     fs.writeFileSync(path.join(tasksDir, sessionId + '-tasks.json'), JSON.stringify(input.todos, null, 2));
                   } catch (e) { log('Save task file error: ' + e.message); }
+                  // Also persist to job tasks.json if session has an active job
+                  try {
+                    const _sess = getSession(sessionId);
+                    if (_sess && _sess.projectId) {
+                      const _activeJob = getActiveJob(_sess.projectId, _sess.id);
+                      if (_activeJob) {
+                        const jobTasksFile = getJobTasksPath(_sess.projectId, _activeJob.id);
+                        fs.writeFileSync(jobTasksFile, JSON.stringify(input.todos, null, 2));
+                      }
+                    }
+                  } catch (e) { log('Save job tasks error: ' + e.message); }
                   // Emit todos event so the frontend task pane updates live
                   onEvent({ type: 'assistant', content: [{ type: 'todos_update', todos: input.todos }] });
                   // Auto-update plan status when all tasks are completed
                   const allDone = input.todos.length > 0 && input.todos.every(t => t.status === 'completed');
                   if (allDone) {
-                    const planFile = path.join(ROOT, 'plans', sessionId + '-plan.md');
+                    // Check session-level plan first, then job-level plan
+                    const planFiles = [path.join(ROOT, 'plans', sessionId + '-plan.md')];
                     try {
-                      if (fs.existsSync(planFile)) {
-                        let planContent = fs.readFileSync(planFile, 'utf8');
-                        // Update status markers in the plan (handles **Status:** or **Status**: variants)
-                        planContent = planContent.replace(/\*\*Status\*?\*?:?\*?\*?\s*(IN PROGRESS|In Progress|in progress)/i, '**Status:** COMPLETE');
-                        planContent = planContent.replace(/^(- \[ \])/gm, '- [x]');
-                        fs.writeFileSync(planFile, planContent);
-                        onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: planFile, content: planContent }] });
+                      const _sess2 = getSession(sessionId);
+                      if (_sess2 && _sess2.projectId) {
+                        const _aj = getActiveJob(_sess2.projectId, _sess2.id);
+                        if (_aj) planFiles.unshift(getJobPlanPath(_sess2.projectId, _aj.id));
                       }
-                    } catch (e) { log('Plan auto-complete error: ' + e.message); }
+                    } catch {}
+                    for (const planFile of planFiles) {
+                      try {
+                        if (fs.existsSync(planFile)) {
+                          let planContent = fs.readFileSync(planFile, 'utf8');
+                          planContent = planContent.replace(/\*\*Status\*?\*?:?\*?\*?\s*(IN PROGRESS|In Progress|in progress)/i, '**Status:** COMPLETE');
+                          planContent = planContent.replace(/^(- \[ \])/gm, '- [x]');
+                          fs.writeFileSync(planFile, planContent);
+                          onEvent({ type: 'assistant', content: [{ type: 'plan_update', path: planFile, content: planContent }] });
+                          break; // only update the first found plan
+                        }
+                      } catch (e) { log('Plan auto-complete error: ' + e.message); }
+                    }
                   }
                 }
               }
@@ -1963,7 +2323,15 @@ cd "${WORK_DIR}"
           const content = event.message?.content || [];
           for (const block of content) {
             if (block.type === 'tool_result') {
-              const raw = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+              let raw;
+              if (typeof block.content === 'string') {
+                raw = block.content;
+              } else if (Array.isArray(block.content)) {
+                // Extract text from content blocks (e.g. Agent tool returns [{type:"text",text:"..."}])
+                raw = block.content.map(b => b.text || b.content || '').join('');
+              } else {
+                raw = JSON.stringify(block.content);
+              }
               const output = raw.slice(0, 4000);
               appendMessage(sessionId, {
                 role: 'system', content: output,
@@ -2220,6 +2588,34 @@ function json(res, data, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+// HTTP client helper for agent-to-agent communication
+function fetchJson(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const { method = 'GET', body } = opts;
+    const parsed = new URL(url);
+    const reqOpts = {
+      hostname: parsed.hostname,
+      port: parsed.port,
+      path: parsed.pathname + parsed.search,
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+    };
+    const req = http.request(reqOpts, (resp) => {
+      let data = '';
+      resp.on('data', c => data += c);
+      resp.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve({ raw: data }); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
 function serveFile(res, filepath, contentType) {
   try {
     const content = fs.readFileSync(filepath);
@@ -2255,7 +2651,7 @@ const server = http.createServer(async (req, res) => {
     serveFile(res, path.join(INSTANCE_DIR, 'console.html'), 'text/html; charset=utf-8');
     return;
   }
-  if (IS_GENESIS && p === '/ide' && m === 'GET') {
+  if (p === '/ide' && m === 'GET') {
     serveFile(res, path.join(__dirname, 'index.html'), 'text/html; charset=utf-8');
     return;
   }
@@ -2266,8 +2662,8 @@ const server = http.createServer(async (req, res) => {
 
   // --- Template core static files (theme.js, etc.) ---
   if (p.startsWith('/template/core/') && m === 'GET') {
-    const safePath = p.replace(/\.\./g, '').slice(1);
-    const filePath = path.join(INSTANCE_DIR, safePath);
+    const safeName = path.basename(p).replace(/\.\./g, '');
+    const filePath = path.join(__dirname, safeName);
     const ext = path.extname(filePath).toLowerCase();
     const mimeTypes = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
     const ct = mimeTypes[ext] || 'application/octet-stream';
@@ -2672,14 +3068,61 @@ const server = http.createServer(async (req, res) => {
   const planMatch = p.match(/^\/api\/sessions\/([^/]+)\/plan$/);
   if (planMatch && m === 'GET') {
     const sid = planMatch[1];
+    // Check session-level plan first
     const planFile = path.join(ROOT, 'plans', sid + '-plan.md');
     try {
       if (fs.existsSync(planFile)) {
         const content = fs.readFileSync(planFile, 'utf8');
         json(res, { data: { content, path: planFile } });
-      } else {
-        json(res, { data: null });
+        return;
       }
+      // Check job-level plan (active job for this session)
+      const sess = getSession(sid);
+      if (sess && sess.projectId) {
+        const aj = getActiveJob(sess.projectId, sid);
+        if (aj) {
+          const jobPlanFile = getJobPlanPath(sess.projectId, aj.id);
+          if (fs.existsSync(jobPlanFile)) {
+            const content = fs.readFileSync(jobPlanFile, 'utf8');
+            json(res, { data: { content, path: jobPlanFile, jobId: aj.id, jobTitle: aj.title } });
+            return;
+          }
+        }
+        // Check most recent completed job's plan
+        const allJobs = getSessionJobs(sess.projectId, sid);
+        for (let i = allJobs.length - 1; i >= 0; i--) {
+          const jobPlanFile = getJobPlanPath(sess.projectId, allJobs[i].id);
+          if (fs.existsSync(jobPlanFile)) {
+            const content = fs.readFileSync(jobPlanFile, 'utf8');
+            json(res, { data: { content, path: jobPlanFile, jobId: allJobs[i].id, jobTitle: allJobs[i].title } });
+            return;
+          }
+          // Also check plans/ dir for files starting with job ID prefix (agents sometimes write here)
+          const plansDir = path.join(ROOT, 'plans');
+          if (fs.existsSync(plansDir)) {
+            const prefix = allJobs[i].id.slice(0, 8);
+            const match = fs.readdirSync(plansDir).find(f => f.startsWith(prefix) && f.endsWith('.md'));
+            if (match) {
+              const matchPath = path.join(plansDir, match);
+              const content = fs.readFileSync(matchPath, 'utf8');
+              json(res, { data: { content, path: matchPath, jobId: allJobs[i].id, jobTitle: allJobs[i].title } });
+              return;
+            }
+          }
+        }
+      }
+      // Final fallback: most recently modified .md in plans/
+      const plansDir = path.join(ROOT, 'plans');
+      if (fs.existsSync(plansDir)) {
+        const planFiles = fs.readdirSync(plansDir).filter(f => f.endsWith('-plan.md') || f.endsWith('.md')).map(f => ({ name: f, mtime: fs.statSync(path.join(plansDir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
+        if (planFiles.length) {
+          const latest = path.join(plansDir, planFiles[0].name);
+          const content = fs.readFileSync(latest, 'utf8');
+          json(res, { data: { content, path: latest } });
+          return;
+        }
+      }
+      json(res, { data: null });
     } catch { json(res, { data: null }); }
     return;
   }
@@ -2738,6 +3181,64 @@ const server = http.createServer(async (req, res) => {
 
     sse({ type: 'tool_start', tool: 'Skill', id: skillName });
     sse({ type: 'tool_desc', tool: 'Skill', id: skillName, description: `Running skill: ${skill.name}` });
+
+    // --- Built-in communication skills (no external process needed) ---
+    if (skillName === 'send' || skillName === 'inbox' || skillName === 'agents') {
+      try {
+        let result = '';
+        if (skillName === 'send') {
+          // Parse: /send <target> <message>  — target can be a name or port
+          const parts = (skillArgs || '').match(/^(\S+)\s+(.+)$/s);
+          if (!parts) { throw new Error('Usage: /send <agent-name-or-port> <message>'); }
+          const target = parts[1];
+          const msg = parts[2];
+          // Resolve target to port — try as number first, then look up by name in joint agents
+          let targetPort = parseInt(target);
+          if (isNaN(targetPort)) {
+            const agents = jointCmd ? JSON.parse(jointCmd('agents', []).stdout || '[]') : [];
+            const found = (Array.isArray(agents) ? agents : []).find(a => a.name && a.name.toLowerCase().includes(target.toLowerCase()));
+            if (found) { targetPort = found.port; }
+            else { throw new Error(`Agent "${target}" not found. Use /agents to see available agents.`); }
+          }
+          const sendRes = await fetchJson(`http://localhost:${PORT}/api/agent/send`, {
+            method: 'POST', body: { targetPort, message: msg, fromSessionId: sessionId, triggerAgent: true },
+          });
+          if (sendRes.error) throw new Error(sendRes.error);
+          result = `<!--html--><div style="color:#3ac77e;font-size:12px">✓ Message sent to agent on port ${targetPort}</div><div style="font-size:11px;color:#888;margin-top:4px">Session: ${sendRes.data?.targetSession?.slice(0,8) || '?'} · Triggered: ${sendRes.data?.response?.data?.triggered || false}</div>`;
+        } else if (skillName === 'inbox') {
+          const all = (skillArgs || '').includes('--all');
+          const inbox = readInbox();
+          const msgs = all ? inbox : inbox.filter(m => !m.delivered);
+          if (!msgs.length) { result = '<!--html--><div style="font-size:11px;color:var(--text-muted);padding:8px">No ' + (all ? '' : 'undelivered ') + 'messages</div>'; }
+          else {
+            result = '<!--html-->' + msgs.map(m => {
+              const from = m.sender?.name || 'Unknown';
+              const time = m.receivedAt ? new Date(m.receivedAt).toLocaleTimeString() : '';
+              const dim = m.delivered ? 'opacity:0.6;' : '';
+              return `<div style="${dim}margin-bottom:8px;padding:6px;border-left:2px solid ${m.isReply ? '#3ac77e' : '#4a8fe7'}"><strong>${from}</strong> <span style="font-size:10px;color:#888">${time}${m.delivered ? ' · delivered' : ''}</span><div style="font-size:12px;margin-top:2px">${(m.message || '').slice(0, 300)}</div></div>`;
+            }).join('');
+          }
+        } else if (skillName === 'agents') {
+          const agents = await fetchJson(`http://localhost:${PORT}/api/joint/agents`).catch(() => ({ data: [] }));
+          const list = agents?.data || [];
+          if (!list.length) { result = '<!--html--><div style="font-size:11px;color:var(--text-muted)">No agents discovered</div>'; }
+          else {
+            result = '<!--html--><table style="font-size:11px;width:100%"><tr style="color:#888"><td>Name</td><td>Port</td><td>Server</td><td>Status</td></tr>' +
+              list.map(a => `<tr><td>${a.icon || ''} ${a.name || a.id}</td><td>${a.port}</td><td>${a.server || '?'}</td><td style="color:${a.running !== false ? '#3ac77e' : '#888'}">${a.running !== false ? 'online' : 'offline'}</td></tr>`).join('') + '</table>';
+          }
+        }
+        sse({ type: 'tool_output', id: skillName, output: result });
+        appendMessage(sessionId, { role: 'system', content: result, timestamp: new Date().toISOString(), tool: 'Skill', toolId: skillName });
+        sse({ type: 'text', content: '' });
+        sse({ type: 'done', result, duration: 0, cost: 0 });
+      } catch (err) {
+        sse({ type: 'error', message: err.message });
+        appendMessage(sessionId, { role: 'system', content: `Skill failed: ${err.message}`, timestamp: new Date().toISOString() });
+      }
+      sse({ type: 'close' });
+      res.end();
+      return;
+    }
 
     try {
       const cmd = skill.run(skillArgs, INSTANCE_DIR);
@@ -2979,6 +3480,263 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // --- Deploy Guard hook endpoint (blocks manual cp/rsync to server template dirs) ---
+  if (p === '/api/hooks/deploy-guard' && m === 'POST') {
+    const settings = loadSettings();
+    if (!settings.enforcements['deploy-guard']) {
+      json(res, {}); return;
+    }
+    const body = await parseBody(req);
+    const toolName = body.tool_name || '';
+    const toolInput = body.tool_input || {};
+
+    // --- Guard 1: Block Edit/Write to deployed (non-template) server files ---
+    if (toolName === 'Edit' || toolName === 'Write') {
+      const filePath = toolInput.file_path || '';
+      // Block edits to server.js, index.html, theme.js in non-template locations across any SERVER
+      const deployedFilePat = /SERVER\d+-[A-Z-]+\/genesis\/((?!template)[^/]+|instances\/)/i;
+      const coreFilePat = /\/(server\.js|index\.html|theme\.js)$/;
+      if (deployedFilePat.test(filePath) && coreFilePat.test(filePath)) {
+        json(res, {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: `DEPLOY GUARD: Do NOT edit deployed instance code (${filePath.split('/').slice(-2).join('/')}). Edit genesis/template/core/ instead.`,
+          },
+        });
+        return;
+      }
+    }
+
+    // For remaining guards, only check Bash commands
+    if (toolName !== 'Bash') { json(res, {}); return; }
+
+    const cmd = toolInput.command || '';
+
+    // --- Guard 2: Block manual cp/rsync/mv to server template directories ---
+    const serverTemplatePat = /\b(cp|rsync|mv)\b.*\/Volumes\/T9[^"']*SERVER[^"']*\/(genesis\/template|\.claude\/rules)/i;
+    if (serverTemplatePat.test(cmd)) {
+      // Allow if it's within the SAME server (not cross-server)
+      const serverMentions = (cmd.match(/SERVER\d+-[A-Z-]+/gi) || []);
+      const uniqueServers = [...new Set(serverMentions.map(s => s.toUpperCase()))];
+      if (uniqueServers.length > 1) {
+        json(res, {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: `DEPLOY GUARD: Do NOT manually copy between servers. Use: python3 scripts/deploy_manager.py deploy --source SERVER2-DEV --target TARGET_SERVER --dry-run`,
+          },
+        });
+        return;
+      }
+    }
+
+    // --- Guard 3: Require --dry-run before real deploy ---
+    const deployPat = /deploy_manager\.py\s+deploy\b/;
+    if (deployPat.test(cmd) && !/dry.?run/.test(cmd)) {
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: `DEPLOY SAFETY: Always run --dry-run first to preview changes before deploying.\n\npython3 scripts/deploy_manager.py deploy --source X --target Y --dry-run\n\nReview the diff, then run without --dry-run to apply.`,
+        }
+      });
+      return; // warn but allow — response already sent
+    }
+
+    // --- Guard 4: Warn on mass kill ---
+    const massKillPat = /\bfor\b.*\b(3199|4199|5199|6199|7199|8199|9199|10199)\b.*\b(kill|xargs\s+kill)\b|\bfor\b.*\b(kill|xargs\s+kill)\b.*\b(3199|4199|5199|6199|7199|8199|9199|10199)\b/i;
+    if (massKillPat.test(cmd)) {
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: `WARNING: Mass kill detected — this will stop multiple server processes. Make sure you have a restart plan ready for ALL 12 processes (8 genesis + 4 lab instances).`,
+        }
+      });
+      return; // warn but allow — response already sent
+    }
+
+    // --- Guard 5: Block lab instances without LAB_IS_GENESIS=0 ---
+    const labStartPat = /LAB_INSTANCE=.*instances\//i;
+    if (labStartPat.test(cmd) && !cmd.includes('LAB_IS_GENESIS=0')) {
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: `DEPLOY GUARD BLOCK: Starting a lab instance without LAB_IS_GENESIS=0. Lab instances MUST have LAB_IS_GENESIS=0 explicitly set, otherwise it leaks from the parent shell and the root "/" route will fail. Add LAB_IS_GENESIS=0 to your command.`,
+        }
+      });
+      return;
+    }
+
+    json(res, {}); // allow
+    return;
+  }
+
+  // --- Restart completeness hook (ensures all processes are restarted after deploy) ---
+  if (p === '/api/hooks/restart-check' && m === 'POST') {
+    const settings = loadSettings();
+    if (!settings.enforcements['deploy-guard']) {
+      json(res, {}); return;
+    }
+    const body = await parseBody(req);
+    const toolName = body.tool_name || '';
+    const toolInput = body.tool_input || {};
+
+    // After a deploy command, check that a restart follows
+    if (toolName === 'Bash') {
+      const cmd = toolInput.command || '';
+      // If running deploy_manager.py deploy (not dry-run), remind about restart
+      if (/deploy_manager\.py\s+deploy\b/.test(cmd) && !/dry.?run/.test(cmd)) {
+        json(res, {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            additionalContext: `RESTART REMINDER: After this deploy completes, you MUST restart ALL 12 server processes:\n- 8 genesis consoles: ports 3199, 4199, 5199, 6199, 7199, 8199, 9199, 10199 (LAB_IS_GENESIS=1)\n- 4 lab instances: ports 5212 (SAPC), 6212 (SAPC-DEV), 9210 (AeroCore), 9211 (AeroCore-Ads) (LAB_IS_GENESIS=0)\nThen verify EVERY port returns HTTP 200 for /, /ide, and /template/core/theme.js`,
+          }
+        });
+        // Still allow the command — this is a reminder, not a block
+      }
+    }
+
+    json(res, {}); return;
+  }
+
+  // --- Job discipline hook endpoint (HTTP hook for Claude Code) ---
+  // Enforces strict pipeline: 1. Create Job → 2. Write Plan → 3. Create Tasks → 4. Execute
+  if (p === '/api/hooks/job-discipline' && m === 'POST') {
+    const settings = loadSettings();
+    if (!settings.enforcements['job-discipline']) {
+      json(res, {}); return;
+    }
+    const body = await parseBody(req);
+    const toolName = body.tool_name || '';
+    const toolInput = body.tool_input || {};
+    const sessionId = body.session_id || '';
+
+    log(`[JOB-HOOK] tool=${toolName} session=${sessionId ? sessionId.slice(0,8) : 'NONE'} input_keys=${Object.keys(toolInput).join(',') || 'NONE'}`);
+
+    // Always allow these meta-tools
+    if (['ToolSearch', 'AskUserQuestion'].includes(toolName)) {
+      json(res, {}); return;
+    }
+
+    // Find the session
+    let session = null;
+    const allSessions = readSessions();
+    for (const s of allSessions) {
+      if (s.claudeSessionId === sessionId || s.id === sessionId) {
+        session = s;
+        break;
+      }
+    }
+
+    // If session doesn't belong to a project, skip enforcement
+    if (!session || !session.projectId) {
+      log(`[JOB-HOOK] SKIP: session=${session ? 'found' : 'NOT FOUND'} projectId=${session?.projectId || 'NONE'}`);
+      json(res, {}); return;
+    }
+
+    const projectId = session.projectId;
+    const activeJob = getActiveJob(projectId, session.id);
+    const jobPlanPathCheck = activeJob ? getJobPlanPath(projectId, activeJob.id) : 'N/A';
+    const hasPlanCheck = activeJob ? fs.existsSync(jobPlanPathCheck) : false;
+    const hasTodosCheck = Array.isArray(session.todos) && session.todos.length > 0;
+    log(`[JOB-HOOK] EVAL: job=${activeJob ? activeJob.id.slice(0,8) : 'NONE'} plan=${hasPlanCheck} todos=${hasTodosCheck} tool=${toolName}`);
+
+    // --- STAGE 1: No job exists → agent must create one via Bash curl ---
+    if (!activeJob) {
+      // Allow TodoWrite so agent can set up tracking
+      if (toolName === 'TodoWrite') { json(res, {}); return; }
+      // Allow Bash ONLY if it's a curl to create a job
+      if (toolName === 'Bash' && toolInput.command) {
+        const cmd = toolInput.command;
+        if (cmd.includes('/api/sessions/') && cmd.includes('/jobs') && cmd.includes('POST')) {
+          log(`[JOB-HOOK] ALLOW: Stage 1 — job creation curl`);
+          json(res, {}); return;
+        }
+        // Also allow curl to close/update jobs
+        if (cmd.includes('/api/projects/') && cmd.includes('/jobs/') && cmd.includes('PATCH')) {
+          json(res, {}); return;
+        }
+      }
+      // Allow Read/Grep/Glob for research
+      if (['Read', 'Grep', 'Glob'].includes(toolName)) { json(res, {}); return; }
+
+      log(`[JOB-HOOK] DENY: Stage 1 — no job, tool=${toolName}`);
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: `JOB DISCIPLINE — No active job. Create one first using: curl -s http://localhost:${PORT}/api/sessions/${session.id}/jobs -X POST -H "Content-Type: application/json" -d '{"title":"DESCRIPTIVE TITLE"}'`,
+        },
+        systemMessage: `BLOCKED: No active job exists for this session. You MUST create a job first by running: curl -s http://localhost:${PORT}/api/sessions/${session.id}/jobs -X POST -H "Content-Type: application/json" -d '{"title":"TITLE"}'`,
+      });
+      return;
+    }
+
+    // Job exists — check pipeline stages
+    const jobPlanPath = getJobPlanPath(projectId, activeJob.id);
+    const hasPlan = fs.existsSync(jobPlanPath);
+    const hasTodos = Array.isArray(session.todos) && session.todos.length > 0;
+
+    // Always allow Bash curl for job management (close/update jobs)
+    if (toolName === 'Bash' && toolInput.command) {
+      const cmd = toolInput.command;
+      if ((cmd.includes('/api/projects/') || cmd.includes('/api/sessions/')) && cmd.includes('/jobs') && (cmd.includes('PATCH') || cmd.includes('POST'))) {
+        json(res, {}); return;
+      }
+    }
+
+    // --- STAGE 2: Job exists but no plan → write plan first ---
+    if (!hasPlan) {
+      // Allow TodoWrite always
+      if (toolName === 'TodoWrite') { json(res, {}); return; }
+      // Allow Write/Edit ONLY if targeting the job plan file
+      if ((toolName === 'Write' || toolName === 'Edit') && toolInput.file_path) {
+        if (toolInput.file_path === jobPlanPath || (toolInput.file_path.includes('/jobs/') && toolInput.file_path.endsWith('-plan.md'))) {
+          json(res, {}); return;
+        }
+      }
+      // Allow Read/Grep/Glob for research before writing plan
+      if (['Read', 'Grep', 'Glob'].includes(toolName)) { json(res, {}); return; }
+
+      log(`[JOB-HOOK] DENY: Stage 2 — no plan, tool=${toolName}`);
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: `JOB DISCIPLINE — No plan. Write plan to: ${jobPlanPath}`,
+        },
+        systemMessage: `BLOCKED: Job "${activeJob.title}" has no plan. Write your plan to: ${jobPlanPath} — include phases with micro-steps (1.1, 1.2, etc.)`,
+      });
+      return;
+    }
+
+    // --- STAGE 3: Job + Plan exist but no tasks → create tasks first ---
+    if (!hasTodos) {
+      // Allow TodoWrite (this is what we WANT them to do)
+      if (toolName === 'TodoWrite') { json(res, {}); return; }
+      // Allow editing the plan
+      if ((toolName === 'Write' || toolName === 'Edit') && toolInput.file_path === jobPlanPath) {
+        json(res, {}); return;
+      }
+      // Allow Read for context
+      if (['Read', 'Grep', 'Glob'].includes(toolName)) { json(res, {}); return; }
+
+      log(`[JOB-HOOK] DENY: Stage 3 — no tasks, tool=${toolName}`);
+      json(res, {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: `JOB DISCIPLINE — Plan exists but no tasks. Use TodoWrite to create tasks from your plan.`,
+        },
+        systemMessage: `BLOCKED: Job "${activeJob.title}" has a plan but no tasks. Call TodoWrite to create tasks from each micro-step before working.`,
+      });
+      return;
+    }
+
+    // --- STAGE 4: Job + Plan + Tasks all exist → allow everything ---
+    json(res, {}); return;
+  }
+
   // --- Task discipline hook endpoint (HTTP hook for Claude Code) ---
   if (p === '/api/hooks/task-discipline' && m === 'POST') {
     const settings = loadSettings();
@@ -2988,12 +3746,35 @@ const server = http.createServer(async (req, res) => {
     }
     const body = await parseBody(req);
     const toolName = body.tool_name || '';
+    const toolInput = body.tool_input || {};
     const sessionId = body.session_id || '';
 
-    // If tool is TodoWrite or ToolSearch, always allow (ToolSearch is needed to fetch TodoWrite schema)
+    // If tool is TodoWrite or ToolSearch, always allow
     if (toolName === 'TodoWrite' || toolName === 'ToolSearch') {
-      json(res, {}); // allow
-      return;
+      json(res, {}); return;
+    }
+
+    // Allow Bash curls to job management APIs — must be checked FIRST before any deny
+    if (toolName === 'Bash' && toolInput.command) {
+      const cmd = toolInput.command;
+      if ((cmd.includes('/api/sessions/') || cmd.includes('/api/projects/')) && cmd.includes('/jobs') && (cmd.includes('POST') || cmd.includes('PATCH'))) {
+        json(res, {}); return;
+      }
+    }
+
+    // If job-discipline is also active AND session is in a project, defer to job-discipline
+    if (settings.enforcements['job-discipline']) {
+      let sessionInProject = false;
+      const allSessionsJD = readSessions();
+      for (const s of allSessionsJD) {
+        if (s.claudeSessionId === sessionId || s.id === sessionId) {
+          sessionInProject = !!s.projectId;
+          break;
+        }
+      }
+      if (sessionInProject) {
+        json(res, {}); return; // job-discipline handles full pipeline
+      }
     }
 
     // Check if this session has any todos defined
@@ -3007,17 +3788,57 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (!hasTodos) {
-      // Inject additional context reminding Claude to create tasks first
       json(res, {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext: `TASK DISCIPLINE VIOLATION: You called ${toolName} without creating tasks first. You MUST call TodoWrite to define your task plan before using any other tool. Create at least one task now.`,
-        }
+          permissionDecision: 'deny',
+          permissionDecisionReason: `TASK DISCIPLINE: You called ${toolName} without tasks. Call TodoWrite first.`,
+        },
+        systemMessage: `BLOCKED: You must call TodoWrite to define tasks before using ${toolName}. Create at least one task now.`,
       });
       return;
     }
 
     json(res, {}); // has todos, allow
+    return;
+  }
+
+  // --- Inbox check hook — surfaces undelivered messages between tool calls ---
+  if (p === '/api/hooks/check-inbox' && m === 'POST') {
+    const undelivered = getUndeliveredInbox();
+    if (!undelivered.length) { json(res, {}); return; }
+
+    // Build a system message with all pending inbox messages
+    const urgentMsgs = undelivered.filter(m => m.priority === 'urgent');
+    const normalMsgs = undelivered.filter(m => m.priority !== 'urgent');
+
+    const lines = ['[INBOX — You have incoming messages from other agents]', ''];
+    if (urgentMsgs.length) {
+      lines.push('🔴 URGENT:');
+      for (const msg of urgentMsgs) {
+        const from = msg.sender?.name || 'Unknown';
+        lines.push(`  From ${from}: ${msg.message}`);
+      }
+      lines.push('');
+    }
+    if (normalMsgs.length) {
+      lines.push('Messages:');
+      for (const msg of normalMsgs) {
+        const from = msg.sender?.name || 'Unknown';
+        lines.push(`  From ${from}: ${msg.message}`);
+      }
+      lines.push('');
+    }
+    lines.push('Respond to urgent messages immediately. Normal messages can wait until your current task is done.');
+    lines.push(`To reply, use: curl -s http://localhost:${PORT}/api/agent/send -X POST -H "Content-Type: application/json" -d '{"targetPort":SENDER_PORT,"message":"YOUR REPLY"}'`);
+
+    // Mark as delivered
+    markInboxDelivered(undelivered.map(m => m.id));
+
+    // Don't block — just inject context
+    json(res, {
+      systemMessage: lines.join('\n'),
+    });
     return;
   }
 
@@ -3238,6 +4059,14 @@ const server = http.createServer(async (req, res) => {
   function resolveDbPath(urlObj) {
     const dbParam = urlObj.searchParams.get('db');
     if (!dbParam) return DEFAULT_USER_DB;
+    // Support project database paths: projects/{projectId}/project.db
+    if (dbParam.startsWith('projects/') && dbParam.endsWith('/project.db')) {
+      const projId = dbParam.split('/')[1];
+      if (projId && /^[0-9a-f-]+$/i.test(projId)) {
+        const projDbPath = path.join(PROJECTS_DIR, projId, 'project.db');
+        if (fs.existsSync(projDbPath)) return projDbPath;
+      }
+    }
     // Security: only allow .db files in the output directory, no path traversal
     const sanitized = path.basename(dbParam);
     if (!sanitized.endsWith('.db')) return DEFAULT_USER_DB;
@@ -3253,8 +4082,9 @@ const server = http.createServer(async (req, res) => {
   // Discover all SQLite databases in output/
   if (p === '/api/database/databases' && m === 'GET') {
     try {
-      const files = fs.readdirSync(OUTPUT_DIR_SS).filter(f => f.endsWith('.db') && !f.endsWith('-shm') && !f.endsWith('-wal'));
       const databases = [];
+      // 1. Scan output/ for .db files (existing behavior)
+      const files = fs.readdirSync(OUTPUT_DIR_SS).filter(f => f.endsWith('.db') && !f.endsWith('-shm') && !f.endsWith('-wal'));
       for (const file of files) {
         const dbPath = path.join(OUTPUT_DIR_SS, file);
         try {
@@ -3270,6 +4100,29 @@ const server = http.createServer(async (req, res) => {
           });
         } catch (e) { /* skip unreadable db files */ }
       }
+      // 2. Scan projects/ for project databases
+      try {
+        const projects = readProjects();
+        for (const proj of projects) {
+          const projDbPath = path.join(PROJECTS_DIR, proj.id, 'project.db');
+          if (fs.existsSync(projDbPath)) {
+            try {
+              const result = require('node:child_process').execSync(`python3 "${DATABASE_MANAGER_PY}" "${projDbPath}" list`, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 10000 });
+              const tables = JSON.parse(result);
+              databases.push({
+                name: `${proj.name}`,
+                path: `projects/${proj.id}/project.db`,
+                readonly: false,
+                tables: tables,
+                tableCount: tables.length,
+                size: fs.statSync(projDbPath).size,
+                projectId: proj.id,
+                isProjectDb: true,
+              });
+            } catch (e) { /* skip unreadable project db */ }
+          }
+        }
+      } catch (e) { /* no projects dir */ }
       // Sort: largest database (most tables) first, then by size descending
       databases.sort((a, b) => {
         if (b.tableCount !== a.tableCount) return b.tableCount - a.tableCount;
@@ -3923,12 +4776,14 @@ const server = http.createServer(async (req, res) => {
   // --- Projects ---
   if (p === '/api/projects' && m === 'GET') {
     const projects = readProjects();
-    // Attach session counts
     const sessions = readSessions();
     for (const proj of projects) {
-      proj.sessions = sessions.filter(s => s.projectId === proj.id);
+      proj.sessionCount = sessions.filter(s => s.projectId === proj.id).length;
+      proj.jobCount = readJobs(proj.id).length;
     }
-    json(res, { data: projects });
+    // Also include unassigned session count
+    const unassigned = sessions.filter(s => !s.projectId).length;
+    json(res, { data: projects, unassignedSessions: unassigned });
     return;
   }
 
@@ -3936,6 +4791,535 @@ const server = http.createServer(async (req, res) => {
     const body = await parseBody(req);
     const project = createProject(body.name, body.description);
     json(res, { data: project });
+    return;
+  }
+
+  // GET /api/projects/{id}
+  const projectDetailMatch = p.match(/^\/api\/projects\/([^/]+)$/);
+  if (projectDetailMatch && m === 'GET') {
+    const proj = getProject(projectDetailMatch[1]);
+    if (!proj) { json(res, { error: 'Project not found' }, 404); return; }
+    const sessions = readSessions().filter(s => s.projectId === proj.id);
+    const jobs = readJobs(proj.id);
+    const mdPath = path.join(PROJECTS_DIR, proj.id, 'project.md');
+    let md = '';
+    try { md = fs.readFileSync(mdPath, 'utf8'); } catch (e) {}
+    json(res, { data: { ...proj, sessions, jobs, md } });
+    return;
+  }
+
+  // PUT /api/projects/{id}
+  if (projectDetailMatch && m === 'PUT') {
+    const body = await parseBody(req);
+    const proj = updateProject(projectDetailMatch[1], body);
+    if (!proj) { json(res, { error: 'Project not found' }, 404); return; }
+    // Update project.md if description changed
+    if (body.description !== undefined || body.name !== undefined) {
+      const mdPath = path.join(PROJECTS_DIR, proj.id, 'project.md');
+      const mdContent = `# ${proj.name}\n\n${proj.description || 'No description yet.'}\n\nCreated: ${proj.createdAt}\n`;
+      try { fs.writeFileSync(mdPath, mdContent); } catch (e) {}
+    }
+    json(res, { data: proj });
+    return;
+  }
+
+  // DELETE /api/projects/{id}
+  if (projectDetailMatch && m === 'DELETE') {
+    const ok = deleteProject(projectDetailMatch[1]);
+    json(res, { data: { deleted: ok } });
+    return;
+  }
+
+  // GET /api/projects/{id}/sessions
+  const projectSessionsMatch = p.match(/^\/api\/projects\/([^/]+)\/sessions$/);
+  if (projectSessionsMatch && m === 'GET') {
+    const sessions = readSessions().filter(s => s.projectId === projectSessionsMatch[1]);
+    json(res, { data: sessions });
+    return;
+  }
+
+  // GET /api/projects/{id}/md — read project.md
+  const projectMdMatch = p.match(/^\/api\/projects\/([^/]+)\/md$/);
+  if (projectMdMatch && m === 'GET') {
+    const mdPath = path.join(PROJECTS_DIR, projectMdMatch[1], 'project.md');
+    try {
+      const content = fs.readFileSync(mdPath, 'utf8');
+      json(res, { data: { content, path: mdPath } });
+    } catch (e) {
+      json(res, { data: null });
+    }
+    return;
+  }
+
+  // PUT /api/projects/{id}/md — update project.md
+  if (projectMdMatch && m === 'PUT') {
+    const body = await parseBody(req);
+    const mdPath = path.join(PROJECTS_DIR, projectMdMatch[1], 'project.md');
+    try {
+      fs.mkdirSync(path.dirname(mdPath), { recursive: true });
+      fs.writeFileSync(mdPath, body.content || '');
+      json(res, { data: { saved: true, path: mdPath } });
+    } catch (e) {
+      json(res, { error: e.message }, 500);
+    }
+    return;
+  }
+
+  // --- Jobs ---
+
+  // GET /api/projects/{projectId}/jobs
+  const projectJobsMatch = p.match(/^\/api\/projects\/([^/]+)\/jobs$/);
+  if (projectJobsMatch && m === 'GET') {
+    const jobs = readJobs(projectJobsMatch[1]);
+    json(res, { data: jobs });
+    return;
+  }
+
+  // POST /api/projects/{projectId}/jobs
+  if (projectJobsMatch && m === 'POST') {
+    const body = await parseBody(req);
+    const job = createJob(projectJobsMatch[1], body.sessionId, body.title);
+    // Broadcast job_update to all listeners on this session
+    if (body.sessionId) {
+      sessionBroadcast(body.sessionId, { type: 'stream', event: { type: 'job_update', job } });
+    }
+    json(res, { data: job });
+    return;
+  }
+
+  // GET /api/projects/{projectId}/jobs/{jobId}
+  const jobDetailMatch = p.match(/^\/api\/projects\/([^/]+)\/jobs\/([^/]+)$/);
+  if (jobDetailMatch && m === 'GET') {
+    const [, projectId, jobId] = jobDetailMatch;
+    const job = getJob(projectId, jobId);
+    if (!job) { json(res, { error: 'Job not found' }, 404); return; }
+    job.plan = getJobPlan(projectId, jobId);
+    job.tasks = getJobTasks(projectId, jobId);
+    json(res, { data: job });
+    return;
+  }
+
+  // PUT/PATCH /api/projects/{projectId}/jobs/{jobId}
+  if (jobDetailMatch && (m === 'PUT' || m === 'PATCH')) {
+    const [, projectId, jobId] = jobDetailMatch;
+    const body = await parseBody(req);
+    const job = updateJob(projectId, jobId, body);
+    if (!job) { json(res, { error: 'Job not found' }, 404); return; }
+    // Broadcast job_update to all listeners on this job's session
+    if (job.sessionId) {
+      sessionBroadcast(job.sessionId, { type: 'stream', event: { type: 'job_update', job } });
+    }
+    json(res, { data: job });
+    return;
+  }
+
+  // GET /api/projects/{projectId}/jobs/{jobId}/plan
+  const jobPlanMatch = p.match(/^\/api\/projects\/([^/]+)\/jobs\/([^/]+)\/plan$/);
+  if (jobPlanMatch && m === 'GET') {
+    const [, projectId, jobId] = jobPlanMatch;
+    const content = getJobPlan(projectId, jobId);
+    const planPath = getJobPlanPath(projectId, jobId);
+    json(res, { data: content ? { content, path: planPath } : null });
+    return;
+  }
+
+  // GET /api/projects/{projectId}/jobs/{jobId}/tasks
+  const jobTasksMatch = p.match(/^\/api\/projects\/([^/]+)\/jobs\/([^/]+)\/tasks$/);
+  if (jobTasksMatch && m === 'GET') {
+    const [, projectId, jobId] = jobTasksMatch;
+    const tasks = getJobTasks(projectId, jobId);
+    const tasksPath = getJobTasksPath(projectId, jobId);
+    json(res, { data: { tasks, path: tasksPath } });
+    return;
+  }
+
+  // GET /api/sessions/{sessionId}/jobs — convenience: get jobs for a session
+  const sessionJobsMatch = p.match(/^\/api\/sessions\/([^/]+)\/jobs$/);
+  if (sessionJobsMatch && m === 'GET') {
+    const session = getSession(sessionJobsMatch[1]);
+    if (!session || !session.projectId) { json(res, { data: [] }); return; }
+    const jobs = getSessionJobs(session.projectId, session.id);
+    json(res, { data: jobs });
+    return;
+  }
+
+  // POST /api/sessions/{sessionId}/jobs — convenience: create job in session's project
+  if (sessionJobsMatch && m === 'POST') {
+    const sessionId = sessionJobsMatch[1];
+    const session = getSession(sessionId);
+    if (!session || !session.projectId) { json(res, { error: 'Session must belong to a project to create jobs' }, 400); return; }
+    const body = await parseBody(req);
+    const job = createJob(session.projectId, session.id, body.title);
+    // Broadcast job_update so all connected clients refresh the jobs list
+    sessionBroadcast(sessionId, { type: 'stream', event: { type: 'job_update', job } });
+    json(res, { data: job });
+    return;
+  }
+
+  // PATCH /api/sessions/{sessionId}/jobs/{jobId} — convenience: update job via session path
+  const sessionJobDetailMatch = p.match(/^\/api\/sessions\/([^/]+)\/jobs\/([^/]+)$/);
+  if (sessionJobDetailMatch && (m === 'PATCH' || m === 'PUT')) {
+    const sessionId = sessionJobDetailMatch[1];
+    const session = getSession(sessionId);
+    if (!session || !session.projectId) { json(res, { error: 'Session not found or no project' }, 404); return; }
+    const body = await parseBody(req);
+    const job = updateJob(session.projectId, sessionJobDetailMatch[2], body);
+    if (!job) { json(res, { error: 'Job not found' }, 404); return; }
+    // Broadcast job_update so all connected clients refresh the jobs list
+    sessionBroadcast(sessionId, { type: 'stream', event: { type: 'job_update', job } });
+    json(res, { data: job });
+    return;
+  }
+
+  // GET /api/sessions/{sessionId}/active-job — get the active job for context injection
+  const activeJobMatch = p.match(/^\/api\/sessions\/([^/]+)\/active-job$/);
+  if (activeJobMatch && m === 'GET') {
+    const session = getSession(activeJobMatch[1]);
+    if (!session || !session.projectId) { json(res, { data: null }); return; }
+    const job = getActiveJob(session.projectId, session.id);
+    if (!job) { json(res, { data: null }); return; }
+    job.plan = getJobPlan(session.projectId, job.id);
+    job.tasks = getJobTasks(session.projectId, job.id);
+    json(res, { data: job });
+    return;
+  }
+
+  // --- Collaborative Jobs ---
+
+  // POST /api/jobs/{jobId}/invite — invite a remote agent to collaborate on a job
+  const jobInviteMatch = p.match(/^\/api\/jobs\/([^/]+)\/invite$/);
+  if (jobInviteMatch && m === 'POST') {
+    const jobId = jobInviteMatch[1];
+    const body = await parseBody(req);
+    if (!body.targetPort) { json(res, { error: 'targetPort required' }, 400); return; }
+
+    // Find the job across all projects
+    let foundJob = null, foundProjectId = null;
+    try {
+      const projectsFile = path.join(PROJECTS_DIR, 'projects.json');
+      const projects = JSON.parse(fs.readFileSync(projectsFile, 'utf8'));
+      for (const proj of projects) {
+        const job = getJob(proj.id, jobId);
+        if (job) { foundJob = job; foundProjectId = proj.id; break; }
+      }
+    } catch {}
+
+    if (!foundJob) { json(res, { error: 'Job not found' }, 404); return; }
+
+    const ai = loadAgentIdentity();
+    const collaborator = {
+      agentId: body.agentId || null,
+      name: body.agentName || null,
+      port: body.targetPort,
+      role: body.role || 'collaborator',
+      invitedAt: new Date().toISOString(),
+    };
+
+    // Add to collaborators if not already there
+    if (!foundJob.collaborators) foundJob.collaborators = [];
+    if (!foundJob.collaborators.find(c => c.port === body.targetPort)) {
+      foundJob.collaborators.push(collaborator);
+      updateJob(foundProjectId, jobId, { collaborators: foundJob.collaborators });
+    }
+
+    // Send invite message to the target agent
+    const jobPlan = getJobPlan(foundProjectId, jobId) || '(no plan yet)';
+    const jobTasks = getJobTasks(foundProjectId, jobId);
+    const tasksSummary = jobTasks.length ? jobTasks.map(t => `- [${t.status}] ${t.content}`).join('\n') : '(no tasks yet)';
+
+    const inviteMessage = [
+      `[JOB COLLABORATION INVITE]`,
+      `From: ${ai.name || AGENT_DISPLAY}`,
+      `Job: ${foundJob.title}`,
+      `Job ID: ${foundJob.id}`,
+      `Project: ${foundProjectId}`,
+      '',
+      `Plan:`,
+      jobPlan,
+      '',
+      `Tasks:`,
+      tasksSummary,
+      '',
+      body.message || 'You have been invited to collaborate on this job.',
+      '',
+      `To update task status, call: curl -s http://localhost:${PORT}/api/jobs/${jobId}/task-update -X POST -H "Content-Type: application/json" -d '{"taskIndex":N,"status":"completed","agentPort":${body.targetPort}}'`,
+    ].join('\n');
+
+    // Send invite via direct inject to their main session
+    try {
+      const sessRes = await fetchJson(`http://localhost:${body.targetPort}/api/sessions`);
+      const sessions = sessRes?.data || [];
+      const main = sessions.find(s => s.isMain);
+      const targetSession = main?.id || sessions[0]?.id;
+      if (targetSession) {
+        await fetchJson(`http://localhost:${body.targetPort}/api/sessions/${targetSession}/inject`, {
+          method: 'POST',
+          body: {
+            message: inviteMessage,
+            sender: {
+              name: ai.name || AGENT_DISPLAY,
+              agentId: ai.agentId || AGENT_ID,
+              server: SERVER_CONFIG.name || 'unknown',
+              lab: LAB.name || 'unknown',
+              port: PORT,
+            },
+            priority: 'normal',
+            triggerAgent: body.triggerAgent !== false,
+          },
+        });
+      }
+    } catch (err) {
+      log(`Job invite delivery failed for port ${body.targetPort}: ${err.message}`);
+    }
+
+    json(res, { data: { invited: true, job: foundJob } });
+    return;
+  }
+
+  // POST /api/jobs/{jobId}/task-update — remote agent updates a task status
+  const jobTaskUpdateMatch = p.match(/^\/api\/jobs\/([^/]+)\/task-update$/);
+  if (jobTaskUpdateMatch && m === 'POST') {
+    const jobId = jobTaskUpdateMatch[1];
+    const body = await parseBody(req);
+
+    // Find job across all projects
+    let foundProjectId = null;
+    try {
+      const projectsFile = path.join(PROJECTS_DIR, 'projects.json');
+      const projects = JSON.parse(fs.readFileSync(projectsFile, 'utf8'));
+      for (const proj of projects) {
+        if (getJob(proj.id, jobId)) { foundProjectId = proj.id; break; }
+      }
+    } catch {}
+
+    if (!foundProjectId) { json(res, { error: 'Job not found' }, 404); return; }
+
+    const tasksPath = getJobTasksPath(foundProjectId, jobId);
+    const tasks = getJobTasks(foundProjectId, jobId);
+    const idx = body.taskIndex ?? body.index;
+    if (idx == null || idx < 0 || idx >= tasks.length) { json(res, { error: 'Invalid task index' }, 400); return; }
+
+    if (body.status) tasks[idx].status = body.status;
+    if (body.activeForm) tasks[idx].activeForm = body.activeForm;
+    if (body.agentPort) tasks[idx].assignee = body.agentPort;
+    tasks[idx].lastUpdatedBy = body.agentPort || 'unknown';
+    tasks[idx].lastUpdatedAt = new Date().toISOString();
+
+    fs.writeFileSync(tasksPath, JSON.stringify(tasks, null, 2));
+
+    // Broadcast the update to any session watching this job
+    const job = getJob(foundProjectId, jobId);
+    if (job?.sessionId) {
+      sessionBroadcast(job.sessionId, { type: 'stream', event: { type: 'job_update', job } });
+    }
+
+    json(res, { data: { updated: true, task: tasks[idx] } });
+    return;
+  }
+
+  // --- Cross-Session Message Inject ---
+  // POST /api/sessions/{id}/inject — receive a message from another agent/session
+  const injectMatch = p.match(/^\/api\/sessions\/([^/]+)\/inject$/);
+  if (injectMatch && m === 'POST') {
+    const targetSessionId = injectMatch[1];
+    const body = await parseBody(req);
+    const session = getSession(targetSessionId);
+    if (!session) { json(res, { error: 'Session not found' }, 404); return; }
+    if (!body.message) { json(res, { error: 'message is required' }, 400); return; }
+
+    const sender = body.sender || {};
+    const priority = body.priority || 'normal';
+    const triggerAgent = body.triggerAgent === true;
+    const isReply = body.isReply === true;
+
+    // Build the injected message with full sender context
+    const senderLabel = sender.name ? `${sender.name} (${sender.server || '?'}:${sender.port || '?'})` : 'Unknown Agent';
+    const injectPrefix = isReply ? '[CROSS-SESSION REPLY]' : (priority === 'urgent' ? '[URGENT CROSS-SESSION MESSAGE]' : '[CROSS-SESSION MESSAGE]');
+    const fullMessage = [
+      `${injectPrefix}`,
+      `From: ${senderLabel}`,
+      sender.sessionId ? `Session: ${sender.sessionId}` : '',
+      sender.lab ? `Lab: ${sender.lab}` : '',
+      '',
+      body.message,
+    ].filter(Boolean).join('\n');
+
+    // Always add to inbox
+    const inboxEntry = addToInbox({
+      targetSessionId,
+      message: body.message,
+      fullMessage,
+      sender,
+      priority,
+      triggerAgent,
+      isReply,
+    });
+
+    // Broadcast inbox_message SSE event to session listeners
+    sessionBroadcast(targetSessionId, { type: 'inbox_message', entry: inboxEntry });
+
+    // Always append cross-session messages to the session for display (so user sees them in chat)
+    appendMessage(targetSessionId, {
+      role: 'user', content: fullMessage,
+      timestamp: new Date().toISOString(),
+      injected: true, senderAgent: sender.name || null,
+      isReply,
+    });
+    updateSession(targetSessionId, {
+      messageCount: (session.messageCount || 0) + 1,
+      lastMessageAt: new Date().toISOString(),
+    });
+    // Broadcast as a new message so UI updates in real-time (must include all fields for proper rendering)
+    sessionBroadcast(targetSessionId, { type: 'message', message: { role: 'user', content: fullMessage, timestamp: new Date().toISOString(), injected: true, senderAgent: sender.name || null, isReply: isReply || false } });
+
+    // Mark as delivered since it's now in the session (user will see it)
+    if (!triggerAgent) markInboxDelivered([inboxEntry.id]);
+
+    // If triggerAgent is true AND no active Claude proc for this session, trigger Claude
+    if (triggerAgent && !activeProcs.has(targetSessionId)) {
+
+      // Fire and forget — don't block the response
+      // Capture assistant text from stream events (not from disk — avoids race conditions)
+      let _capturedText = '';
+      const _injectStreamCb = (ev) => {
+        if (ev.type === 'assistant' && Array.isArray(ev.content)) {
+          for (const block of ev.content) {
+            if (block.type === 'text' && block.text) _capturedText += block.text;
+          }
+        }
+      };
+      sendToClaudeStream(targetSessionId, fullMessage, _injectStreamCb).then(() => {
+        markInboxDelivered([inboxEntry.id]);
+        log(`Inject: Claude processed message in session ${targetSessionId.slice(0, 8)} from ${senderLabel}`);
+
+        // Auto-reply: send Claude's response back to the sender (unless this IS a reply — prevent loops)
+        if (!isReply && sender.port) {
+          // Use captured stream text; fall back to last saved assistant message
+          let responseText = _capturedText.trim();
+          if (!responseText) {
+            const msgs = getMessages(targetSessionId);
+            const lastAssistant = [...msgs].reverse().find(m => m.role === 'assistant');
+            if (lastAssistant && lastAssistant.content) responseText = lastAssistant.content;
+          }
+          if (responseText) {
+            const ai = loadAgentIdentity();
+            responseText = responseText.slice(0, 8000);
+            log(`Inject: auto-replying to ${sender.name || sender.port} with ${responseText.length} chars`);
+
+            // Find sender's session to inject into
+            fetchJson(`http://localhost:${sender.port}/api/sessions`).then(sessRes => {
+              const sessions = sessRes?.data || [];
+              const senderSession = (sender.sessionId && sessions.find(s => s.id === sender.sessionId))
+                || sessions.find(s => s.isMain)
+                || sessions[0];
+              if (senderSession) {
+                fetchJson(`http://localhost:${sender.port}/api/sessions/${senderSession.id}/inject`, {
+                  method: 'POST',
+                  body: {
+                    message: responseText,
+                    sender: {
+                      name: ai.name || AGENT_DISPLAY,
+                      agentId: ai.agentId || AGENT_ID,
+                      server: SERVER_CONFIG.name || 'unknown',
+                      lab: LAB.name || 'unknown',
+                      port: PORT,
+                      sessionId: targetSessionId,
+                    },
+                    priority: 'normal',
+                    triggerAgent: false,
+                    isReply: true,
+                  },
+                }).then(() => {
+                  log(`Inject: auto-reply delivered to ${sender.name || sender.port}`);
+                }).catch(err => {
+                  log(`Inject: auto-reply delivery failed: ${err.message}`);
+                });
+              }
+            }).catch(err => {
+              log(`Inject: could not discover sender sessions: ${err.message}`);
+            });
+          }
+        }
+      }).catch(err => {
+        log(`Inject: Claude error for session ${targetSessionId.slice(0, 8)}: ${err.message}`);
+      });
+
+      json(res, { data: { injected: true, triggered: true, inboxId: inboxEntry.id } });
+    } else {
+      json(res, { data: { injected: true, triggered: false, inboxId: inboxEntry.id, reason: triggerAgent ? 'session busy' : 'trigger not requested' } });
+    }
+    return;
+  }
+
+  // --- Agent Inbox API ---
+
+  // GET /api/agent/inbox — list inbox messages
+  if (p === '/api/agent/inbox' && m === 'GET') {
+    const all = url.searchParams.get('all') === '1';
+    json(res, { data: all ? readInbox() : getUndeliveredInbox() });
+    return;
+  }
+
+  // POST /api/agent/inbox/clear — clear delivered or all messages
+  if (p === '/api/agent/inbox/clear' && m === 'POST') {
+    const body = await parseBody(req);
+    clearInbox(body.onlyDelivered !== false);
+    json(res, { data: { cleared: true } });
+    return;
+  }
+
+  // POST /api/agent/inbox/deliver — mark specific messages as delivered
+  if (p === '/api/agent/inbox/deliver' && m === 'POST') {
+    const body = await parseBody(req);
+    if (!body.ids || !Array.isArray(body.ids)) { json(res, { error: 'ids array required' }, 400); return; }
+    markInboxDelivered(body.ids);
+    json(res, { data: { delivered: true } });
+    return;
+  }
+
+  // POST /api/agent/send — send a message to a remote agent via their inject endpoint
+  if (p === '/api/agent/send' && m === 'POST') {
+    const body = await parseBody(req);
+    if (!body.targetPort) { json(res, { error: 'targetPort required' }, 400); return; }
+    if (!body.message) { json(res, { error: 'message required' }, 400); return; }
+
+    const ai = loadAgentIdentity();
+    const sender = {
+      name: ai.name || AGENT_DISPLAY,
+      agentId: ai.agentId || AGENT_ID,
+      server: SERVER_CONFIG.name || SERVER_CONFIG.id || 'unknown',
+      lab: LAB.name || PLATFORM_ID || 'unknown',
+      port: PORT,
+      sessionId: body.fromSessionId || null,
+    };
+
+    // First discover the target agent's session to inject into
+    const targetPort = body.targetPort;
+    const targetSessionId = body.targetSessionId || null;
+    const priority = body.priority || 'normal';
+    const triggerAgent = body.triggerAgent !== false; // default true
+
+    try {
+      // If no target session specified, get their main session
+      let sessionId = targetSessionId;
+      if (!sessionId) {
+        const sessRes = await fetchJson(`http://localhost:${targetPort}/api/sessions`);
+        const sessions = sessRes?.data || [];
+        const main = sessions.find(s => s.isMain);
+        sessionId = main?.id || sessions[0]?.id;
+        if (!sessionId) { json(res, { error: 'No sessions found on target agent' }, 404); return; }
+      }
+
+      // Send the inject request
+      const injectRes = await fetchJson(`http://localhost:${targetPort}/api/sessions/${sessionId}/inject`, {
+        method: 'POST',
+        body: { message: body.message, sender, priority, triggerAgent },
+      });
+
+      json(res, { data: { sent: true, targetPort, targetSession: sessionId, response: injectRes } });
+    } catch (err) {
+      json(res, { error: `Failed to send to agent on port ${targetPort}: ${err.message}` }, 502);
+    }
     return;
   }
 

@@ -80,6 +80,19 @@
   .btn-delete { position: absolute; top: 8px; right: 8px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; opacity: 0; padding: 2px 4px; }
   .session-item:hover .btn-delete { opacity: 1; } .btn-delete:hover { color: var(--red); }
   .sidebar-empty { padding: 30px 16px; text-align: center; color: var(--text-muted); font-size: 11px; }
+  /* Sidebar breadcrumb */
+  .sidebar-breadcrumb { padding: 6px 12px; font-size: 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .sidebar-breadcrumb a { color: var(--gold-dim); cursor: pointer; text-decoration: none; }
+  .sidebar-breadcrumb a:hover { color: var(--gold); text-decoration: underline; }
+  .sidebar-breadcrumb .bc-sep { color: var(--text-muted); opacity: 0.5; }
+  .sidebar-breadcrumb .bc-current { color: var(--text); }
+  /* Project items */
+  .project-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.15s; position: relative; }
+  .project-item:hover { background: var(--surface-hover); }
+  .project-item .project-name { font-size: 12px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .project-item .project-name .project-icon { font-size: 14px; }
+  .project-item .project-meta { margin-top: 3px; display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--text-muted); }
+  .project-item .project-count { background: var(--border); padding: 1px 6px; border-radius: 3px; font-size: 9px; }
   /* Sidebar split pane */
   .sidebar-gutter { height: 5px; min-height: 5px; cursor: row-resize; background: var(--border); transition: background 0.15s; flex-shrink: 0; }
   .sidebar-gutter:hover { background: var(--gold-dim); }
@@ -137,7 +150,9 @@
   .msg { margin-bottom: 14px; max-width: 800px; }
   .msg-header { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; }
   .msg-sender { font-size: 11px; font-weight: 600; }
-  .msg-sender.user { color: var(--emerald); } .msg-sender.assistant { color: var(--gold); } .msg-sender.system { color: var(--text-muted); }
+  .msg-sender.user { color: var(--emerald); } .msg-sender.assistant { color: var(--gold); } .msg-sender.system { color: var(--text-muted); } .msg-sender.injected { color: #60a5fa; }
+  .msg-badge-inject { font-size: 9px; background: rgba(96,165,250,0.15); color: #60a5fa; padding: 1px 6px; border-radius: 8px; margin-left: 6px; }
+  .inject-body { border-left: 2px solid rgba(96,165,250,0.3); padding-left: 10px; }
   .msg-time { font-size: 9px; color: var(--text-muted); }
   .msg-dur, .msg-cost { font-size: 9px; color: var(--text-muted); font-family: var(--mono); }
   .msg-cost { color: var(--gold-dim); }
@@ -257,6 +272,13 @@
   .task-toggle-btn:hover { color: var(--gold); background: var(--surface-hover); }
   .task-list { flex: 1; overflow-y: auto; padding: 8px; }
   .task-empty { padding: 20px 12px; text-align: center; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+  /* Job items in task pane */
+  .job-item { padding: 5px 8px; cursor: pointer; font-size: 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; transition: background 0.15s; }
+  .job-item:hover { background: var(--surface-hover); }
+  .job-item.active { background: var(--surface-hover); border-left: 2px solid var(--gold); }
+  .job-item .job-status { font-size: 10px; }
+  .job-item .job-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-item .job-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--border); color: var(--text-muted); }
   .task-item {
     display: flex; align-items: flex-start; gap: 6px; padding: 6px 8px; margin-bottom: 4px;
     border-radius: 6px; cursor: pointer; border: 1px solid transparent;
@@ -670,9 +692,24 @@
   .ss-db-item .ss-tbl-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ss-db-item .ss-tbl-rows { color: var(--text-dim); font-size: 10px; }
 
-  /* Joint session panel */
-  #joint-panel { display: none; flex-direction: column; border-left: 1px solid var(--border); background: var(--bg); min-width: 280px; max-width: 50%; }
-  #joint-panel.open { display: flex; }
+  /* Channel/Inbox Panel — always visible */
+  #channel-panel { display: flex; flex-direction: column; overflow: hidden; min-width: 240px; max-width: 500px; background: var(--bg); border-left: 1px solid var(--border); }
+  #channel-gutter { width: 5px; min-width: 5px; cursor: col-resize; background: var(--border); transition: background 0.15s; flex-shrink: 0; }
+  #channel-gutter:hover { background: var(--gold-dim); }
+  .channel-panel-header { height: 44px; min-height: 44px; display: flex; align-items: center; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .channel-panel-tabs { display: flex; flex: 1; height: 100%; }
+  .cp-tab { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; position: relative; font-family: var(--font); }
+  .cp-tab:hover { color: var(--text-dim); }
+  .cp-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .cp-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .cp-view:not(.active) { display: none; }
+  .cp-channel-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 12px; color: var(--text); transition: background 0.1s; }
+  .cp-channel-item:hover { background: var(--surface-hover); }
+  .cp-channel-item.active { background: var(--sel-bg); border: 1px solid var(--sel-border); }
+  .cp-channel-hash { color: var(--text-muted); font-weight: 600; }
+  .cp-channel-unread { font-size: 9px; background: var(--gold); color: var(--bg); padding: 1px 5px; border-radius: 8px; margin-left: auto; font-weight: 700; }
+
+  /* Joint channel chat (reused inside channel panel) */
   .joint-header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
   .joint-header .joint-channel-name { font-weight: 600; color: var(--gold); font-size: 13px; }
   .joint-header .joint-topic { color: var(--text-muted); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -690,13 +727,10 @@
   .joint-msg-body { color: var(--text); font-size: 12px; line-height: 1.4; padding-left: 17px; white-space: pre-wrap; word-break: break-word; }
   .joint-msg.system .joint-msg-body { color: var(--text-muted); font-style: italic; text-align: center; padding-left: 0; }
   .joint-msg.user .joint-msg-name { color: var(--gold); }
-  .joint-input { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .joint-input { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); flex-shrink: 0; position: relative; }
   .joint-input textarea { flex: 1; resize: none; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; }
   .joint-input textarea:focus { outline: none; border-color: var(--gold-dim); }
   .joint-input .btn-joint-send { background: var(--gold); color: var(--bg); border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 11px; font-weight: 600; }
-  .joint-gutter { width: 5px; min-width: 5px; cursor: col-resize; background: var(--border); transition: background 0.15s; flex-shrink: 0; }
-  .joint-gutter:hover { background: var(--gold-dim); }
-  .joint-input { position: relative; }
   .joint-mention-dropdown { position: absolute; bottom: 100%; left: 8px; right: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; max-height: 140px; overflow-y: auto; display: none; z-index: 20; box-shadow: 0 -2px 8px rgba(0,0,0,0.3); }
   .joint-mention-dropdown.open { display: block; }
   .joint-mention-item { padding: 5px 10px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
@@ -706,16 +740,20 @@
   .joint-mention-item .mention-role { color: var(--text-dim); font-size: 10px; }
   .joint-msg-body .mention { color: var(--gold); font-weight: 600; }
 
-  /* Channels sidebar panel */
-  .sb-channels { list-style: none; margin: 0; padding: 0; }
-  .sb-channel-item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; border-radius: 4px; transition: background 0.1s; }
-  .sb-channel-item:hover { background: var(--surface-hover); }
-  .sb-channel-item.active { background: var(--surface-hover); color: var(--gold); }
-  .sb-channel-name { font-weight: 500; }
-  .sb-channel-meta { color: var(--text-dim); font-size: 10px; margin-left: auto; }
-  .sb-channel-create { display: flex; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-  .sb-channel-create input { flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-size: 11px; }
-  .sb-channel-create button { background: var(--gold); color: var(--bg); border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+  /* Inbox (inside channel panel) */
+  .inbox-badge { position: absolute; top: -4px; right: -6px; background: var(--red); color: #fff; font-size: 9px; min-width: 14px; height: 14px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-weight: 700; padding: 0 3px; }
+  .inbox-agent-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 10px; font-size: 10px; background: var(--surface-hover); color: var(--text); cursor: pointer; border: 1px solid var(--border); }
+  .inbox-agent-chip:hover { border-color: var(--gold-dim); }
+  .inbox-agent-chip .agent-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .inbox-agent-chip .agent-dot.online { background: var(--emerald); }
+  .inbox-agent-chip .agent-dot.offline { background: var(--text-muted); }
+  .inbox-msg { padding: 6px 0; }
+  .inbox-msg + .inbox-msg { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px; }
+  .inbox-msg-from { font-size: 11px; font-weight: 600; color: var(--gold); }
+  .inbox-msg-meta { font-size: 9px; color: var(--text-muted); }
+  .inbox-msg-body { font-size: 12px; color: var(--text); margin-top: 3px; line-height: 1.4; white-space: pre-wrap; }
+  .inbox-msg.urgent .inbox-msg-from::before { content: '\1F534 '; }
+
 
 </style>
 <script src="/template/core/theme.js" defer></script>
@@ -729,18 +767,17 @@
   <aside id="sidebar">
     <div class="sidebar-header">
       <button class="btn-hamburger" onclick="toggleSidebar()" title="Collapse sidebar">&#9776;</button>
-      <span class="sidebar-brand">Jubilee Lab</span><span class="server-badge" id="server-badge"></span>
-      <button class="btn-new" onclick="newSession()">+ New</button>
+      <span class="sidebar-brand" id="sidebar-brand">Jubilee Lab</span><span class="server-badge" id="server-badge"></span>
+      <button class="btn-new" id="btn-new" onclick="sidebarNewAction()">+ New</button>
     </div>
+    <div class="sidebar-breadcrumb" id="sidebar-breadcrumb" style="display:none"></div>
     <div class="session-list" id="session-list"></div>
     <div class="sidebar-gutter" id="sidebar-gutter"></div>
     <div class="sidebar-bottom" id="sidebar-bottom">
       <div class="sb-tabs" id="sb-tabs">
         <button class="sb-tab active" data-panel="platforms" onclick="switchSbTab('platforms')" title="Platforms">&#9889;</button>
-        <button class="sb-tab" data-panel="projects" onclick="switchSbTab('projects')" title="Projects">&#128194;</button>
         <button class="sb-tab" data-panel="settings" onclick="switchSbTab('settings')" title="Settings">&#9881;</button>
         <button class="sb-tab" data-panel="scripts" onclick="switchSbTab('scripts')" title="Scripts">&#128220;</button>
-        <button class="sb-tab" data-panel="channels" onclick="switchSbTab('channels')" title="Channels">&#128172;</button>
       </div>
       <div class="sb-panel" id="sb-panel"></div>
     </div>
@@ -760,7 +797,8 @@
             <option value="haiku">Haiku</option>
           </select>
           <button class="btn-header" id="btn-export" onclick="showExportModal()" title="Export transcript to KB">Export</button>
-          <button class="btn-header" id="btn-tasks-toggle" onclick="toggleTaskPane()" title="Toggle task list">&#9745;</button>
+          <button class="btn-header" id="btn-tasks-toggle" onclick="toggleTaskPane()" title="Toggle Project Management">&#9745;</button>
+          <button class="btn-header" id="btn-inbox" onclick="switchChannelTab('inbox')" title="Agent Inbox" style="position:relative">&#9993;<span class="inbox-badge" id="inbox-badge" style="display:none">0</span></button>
           <button class="btn-header" id="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme">🌙 Dark</button>
           <button class="btn-header" onclick="switchSbTab('settings')" title="Settings">&#9881;</button>
         </header>
@@ -777,9 +815,17 @@
       </div>
       <div id="task-pane">
         <div class="task-header">
-          <span class="task-header-title">Tasks</span>
+          <span class="task-header-title">Project Management</span>
           <span class="task-count" id="task-count"></span>
-          <button class="task-toggle-btn" onclick="toggleTaskPane()" title="Hide tasks">&times;</button>
+          <button class="task-toggle-btn" onclick="toggleTaskPane()" title="Hide Project Management">&times;</button>
+        </div>
+        <!-- Jobs section -->
+        <div id="jobs-section" style="display:none">
+          <div class="plan-header" style="border-bottom:1px solid var(--border)">
+            <span class="plan-header-title" style="font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px">Jobs</span>
+            <button class="btn-new" style="font-size:9px;padding:1px 6px" onclick="createJobFromUI()">+ Job</button>
+          </div>
+          <div id="jobs-list" style="max-height:120px;overflow-y:auto"></div>
         </div>
         <!-- Plan section -->
         <div id="plan-section">
@@ -792,35 +838,72 @@
         </div>
         <!-- Tasks section -->
         <div class="task-section-header" id="task-section-header">
-          <span style="font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px">Task List</span>
+          <span style="font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.5px">Tasks</span>
           <span id="tasks-file-link" style="display:none;font-size:10px;color:var(--gold);cursor:pointer;text-decoration:underline;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px" title="Open tasks file"></span>
         </div>
         <div class="task-list" id="task-list">
-          <div class="task-empty" id="task-empty">No active tasks.<br><span style="font-size:10px;opacity:0.7">When the agent creates a task list, it will appear here.</span></div>
+          <div class="task-empty" id="task-empty">No active tasks.<br><span style="font-size:10px;opacity:0.7">When the agent creates tasks, they will appear here.</span></div>
         </div>
         <div class="task-progress" id="task-progress" style="display:none">
           <div class="task-progress-bar"><div class="task-progress-fill" id="task-progress-fill"></div></div>
           <div class="task-progress-label" id="task-progress-label"></div>
         </div>
       </div>
-      <div class="joint-gutter" id="joint-gutter" style="display:none"></div>
-      <div id="joint-panel" style="flex: 0 0 320px;">
-        <div class="joint-header">
-          <span class="joint-channel-name" id="joint-channel-name">#channel</span>
-          <span class="joint-topic" id="joint-topic"></span>
-          <span class="joint-members-badge" id="joint-members-badge">0</span>
-          <button class="btn-joint-close" onclick="closeJointPanel()" title="Close">&times;</button>
+    </div>
+    <div id="channel-gutter"></div>
+    <div id="channel-panel" style="flex: 0 0 280px;">
+      <div class="channel-panel-header">
+        <div class="channel-panel-tabs">
+          <button class="cp-tab active" data-tab="channels" onclick="switchChannelTab('channels')">Channels</button>
+          <button class="cp-tab" data-tab="inbox" onclick="switchChannelTab('inbox')">Inbox <span class="inbox-badge" id="inbox-badge-tab" style="display:none">0</span></button>
         </div>
-        <div class="joint-messages" id="joint-messages"></div>
-        <div class="joint-input">
-          <div class="joint-mention-dropdown" id="joint-mention-dropdown"></div>
-          <textarea id="joint-input-box" rows="1" placeholder="Message channel... (@ to mention)" onkeydown="jointHandleKey(event)" oninput="jointMentionCheck(event)"></textarea>
-          <button class="btn-joint-send" onclick="jointSendMessage()">Send</button>
+      </div>
+      <!-- Channels view -->
+      <div id="cp-channels-view" class="cp-view active">
+        <div id="cp-channel-list-view">
+          <div style="padding:8px">
+            <div style="display:flex;gap:4px;margin-bottom:8px">
+              <input id="cp-new-channel" placeholder="New channel name..." style="flex:1;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:11px;font-family:var(--font)">
+              <button class="btn-joint-send" onclick="cpCreateChannel()" style="font-size:10px;padding:3px 8px">+</button>
+            </div>
+            <div id="cp-channel-items" style="display:flex;flex-direction:column;gap:2px"></div>
+          </div>
+        </div>
+        <div id="cp-channel-chat-view" style="display:none;flex:1;flex-direction:column">
+          <div class="joint-header">
+            <button class="btn-joint-close" onclick="backToChannelList()" title="Back" style="font-size:16px">&larr;</button>
+            <span class="joint-channel-name" id="joint-channel-name">#channel</span>
+            <span class="joint-topic" id="joint-topic"></span>
+            <span class="joint-members-badge" id="joint-members-badge">0</span>
+          </div>
+          <div class="joint-messages" id="joint-messages"></div>
+          <div class="joint-input">
+            <div class="joint-mention-dropdown" id="joint-mention-dropdown"></div>
+            <textarea id="joint-input-box" rows="1" placeholder="Message channel... (@ to mention)" onkeydown="jointHandleKey(event)" oninput="jointMentionCheck(event)"></textarea>
+            <button class="btn-joint-send" onclick="jointSendMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+      <!-- Inbox view -->
+      <div id="cp-inbox-view" class="cp-view" style="display:none">
+        <div class="inbox-agents" id="inbox-agents" style="padding:6px 8px;border-bottom:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-muted);padding:2px 0;text-transform:uppercase;letter-spacing:0.5px">Online Agents</div>
+          <div id="inbox-agent-list" style="display:flex;gap:4px;flex-wrap:wrap;padding:4px 0"></div>
+        </div>
+        <div class="inbox-messages" id="inbox-messages" style="flex:1;overflow-y:auto;padding:8px">
+          <div style="font-size:11px;color:var(--text-muted);padding:12px 0;text-align:center">No messages yet</div>
+        </div>
+        <div class="inbox-compose" style="display:flex;gap:4px;padding:6px 8px;border-top:1px solid var(--border);align-items:flex-end">
+          <select id="inbox-target-agent" style="flex:1;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px;font-size:10px;font-family:var(--font)">
+            <option value="">Select agent...</option>
+          </select>
+          <textarea id="inbox-compose-box" rows="1" placeholder="Send message to agent..." style="flex:2;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:11px;resize:none;font-family:var(--font)"></textarea>
+          <button class="btn-joint-send" onclick="inboxSendMessage()" style="font-size:10px;padding:3px 8px">Send</button>
         </div>
       </div>
     </div>
     <div id="gutter"></div>
-    <div id="data-panel" style="flex: 0 0 50%;">
+    <div id="data-panel" style="flex: 0 0 40%;">
       <div id="data-toolbar">
         <!-- View tabs -->
         <button class="view-tab active" id="vtab-files" onclick="switchView('files')">Files</button>
@@ -989,6 +1072,16 @@
   <div class="fm-ctx-sep"></div>
   <div class="fm-ctx-item danger" onclick="fmDelete()"><span>&#128465;</span> Delete <span class="ctx-key">Del</span></div>
 </div>
+<!-- Session Context Menu -->
+<div class="fm-ctx" id="session-ctx">
+  <div class="fm-ctx-item" onclick="sessionCtxCopyMeta()"><span>&#128203;</span> Copy Session Metadata</div>
+  <div class="fm-ctx-item" onclick="sessionCtxInjectRef()"><span>&#128204;</span> Inject as Reference</div>
+  <div class="fm-ctx-sep"></div>
+  <div class="fm-ctx-item" id="session-ctx-move" onclick="sessionCtxMoveToProject()"><span>&#128193;</span> Move to Project...</div>
+  <div class="fm-ctx-item" onclick="sessionCtxMoveToNew()"><span>&#10133;</span> Move to New Project...</div>
+  <div class="fm-ctx-sep"></div>
+  <div class="fm-ctx-item danger" onclick="sessionCtxDelete()"><span>&#128465;</span> Delete Session</div>
+</div>
 <input type="file" id="fm-upload-dir" style="display:none" onchange="fmUploadDirConfirm(this)" multiple>
 
 <!-- File Manager Properties Modal -->
@@ -1071,7 +1164,7 @@ async function loadSessions() {
 
 async function newSession() {
   const body = { model: S.model };
-  if (S.activeProject) body.projectId = S.activeProject;
+  if (S.activeProject && S.activeProject !== '__unassigned') body.projectId = S.activeProject;
   const { data } = await api('POST', '/api/sessions', body);
   S.sessions.unshift(data);
   openSession(data.id);
@@ -1251,12 +1344,24 @@ function connectLiveMonitor(sessionId) {
           S.thinkingText = (S.thinkingText || '') + (ev.content || '');
           renderThinking(); scrollBottom();
         }
+        if (ev.type === 'todos') { S.todos = ev.todos || []; renderTaskPane(); }
+        if (ev.type === 'plan') { S.plan = { content: ev.content, path: ev.path }; renderTaskPane(); }
+        if (ev.type === 'job_update') { loadJobs().then(() => { renderJobsList(); renderTaskPane(); }); }
         if (ev.type === 'done') {
           // Stream complete — the 'message' event will follow with the final content
           flushThinking();
           _liveFullText = '';
           S.streamText = '';
           const sd = document.getElementById('stream-msg'); if (sd) sd.remove();
+        }
+      }
+      if (data.type === 'inbox_message') {
+        // A message arrived from another agent
+        const entry = data.entry;
+        if (entry && !_inboxMessages.find(m => m.id === entry.id)) {
+          _inboxMessages.push(entry);
+          updateInboxBadge();
+          if (_inboxOpen) renderInboxMessages();
         }
       }
     } catch (e) { console.error('Live monitor parse error:', e); }
@@ -1676,11 +1781,126 @@ function showFmCtx(e, filePath, isDir, name) {
 }
 
 function hideFmCtx() { document.getElementById('fm-ctx').classList.remove('show'); }
-document.addEventListener('click', hideFmCtx);
+function hideSessionCtx() { document.getElementById('session-ctx').classList.remove('show'); }
+function hideAllCtx() { hideFmCtx(); hideSessionCtx(); }
+document.addEventListener('click', hideAllCtx);
 document.addEventListener('contextmenu', (e) => {
-  // Only show custom menu on file tree elements
   if (!e.target.closest('#file-tree')) hideFmCtx();
+  if (!e.target.closest('.session-item')) hideSessionCtx();
 });
+
+// ── Session context menu ──
+let _sessionCtxTarget = null; // { id, title, projectId, model }
+
+function showSessionCtx(e, sessionId) {
+  e.preventDefault(); e.stopPropagation();
+  hideAllCtx();
+  const session = S.sessions.find(s => s.id === sessionId);
+  if (!session) return;
+  _sessionCtxTarget = session;
+  const ctx = document.getElementById('session-ctx');
+  ctx.classList.add('show');
+  const x = Math.min(e.clientX, window.innerWidth - 220);
+  const y = Math.min(e.clientY, window.innerHeight - 250);
+  ctx.style.left = x + 'px'; ctx.style.top = y + 'px';
+}
+
+async function sessionCtxCopyMeta() {
+  if (!_sessionCtxTarget) return;
+  const s = _sessionCtxTarget;
+  const project = (_projectsCache || []).find(p => p.id === s.projectId) || null;
+  // Fetch server identity
+  let server = {};
+  try { const r = await api('GET', '/api/joint/whoami'); server = r.data || {}; } catch(e) {}
+  const meta = [
+    `Session: ${s.id}`,
+    `Title: ${s.title || 'New Analysis'}`,
+    `Model: ${s.model || 'opus'}`,
+    `Project: ${project ? project.name + ' (' + s.projectId + ')' : 'Unassigned'}`,
+    `Server: ${server.serverId || 'unknown'} (${server.platform || ''})`,
+    `Lab: ${server.displayName || server.instance || ''} :${server.port || ''}`,
+    `Agent: ${server.agentId || ''}`,
+    `Created: ${s.createdAt || ''}`,
+    `Messages: ${s.messageCount || 0}`,
+  ].join('\n');
+  await navigator.clipboard.writeText(meta);
+  hideSessionCtx();
+  showToast('Session metadata copied');
+}
+
+function sessionCtxInjectRef() {
+  if (!_sessionCtxTarget) return;
+  const s = _sessionCtxTarget;
+  const project = (_projectsCache || []).find(p => p.id === s.projectId) || null;
+  S._sessionRef = {
+    id: s.id,
+    title: s.title || 'New Analysis',
+    model: s.model,
+    projectId: s.projectId,
+    projectName: project ? project.name : null,
+  };
+  updateContextIndicator();
+  hideSessionCtx();
+}
+
+function clearSessionRef() {
+  S._sessionRef = null;
+  updateContextIndicator();
+}
+
+async function sessionCtxMoveToProject() {
+  if (!_sessionCtxTarget) return;
+  hideSessionCtx();
+  // Show a modal with project list
+  const projects = _projectsCache || [];
+  if (!projects.length) { alert('No projects available. Create one first.'); return; }
+  const list = projects.map(p => `${p.name}`).join('\n');
+  const choice = prompt(`Move "${_sessionCtxTarget.title || 'New Analysis'}" to which project?\n\n${projects.map((p,i) => `${i+1}. ${p.name}`).join('\n')}\n\nEnter number:`);
+  if (!choice) return;
+  const idx = parseInt(choice) - 1;
+  if (idx < 0 || idx >= projects.length) { alert('Invalid selection'); return; }
+  const targetProject = projects[idx];
+  await api('PATCH', `/api/sessions/${_sessionCtxTarget.id}`, { projectId: targetProject.id });
+  _sessionCtxTarget.projectId = targetProject.id;
+  showToast(`Moved to "${targetProject.name}"`);
+  await loadSessions();
+  renderSidebar();
+}
+
+async function sessionCtxMoveToNew() {
+  if (!_sessionCtxTarget) return;
+  hideSessionCtx();
+  const name = prompt('New project name:');
+  if (!name) return;
+  const desc = prompt('Project description (optional):') || '';
+  const { data: project } = await api('POST', '/api/projects', { name, description: desc });
+  if (!project) { alert('Failed to create project'); return; }
+  await api('PATCH', `/api/sessions/${_sessionCtxTarget.id}`, { projectId: project.id });
+  _sessionCtxTarget.projectId = project.id;
+  showToast(`Created "${name}" and moved session`);
+  await loadSessions();
+  _projectsCache.push(project);
+  renderSidebar();
+}
+
+async function sessionCtxDelete() {
+  if (!_sessionCtxTarget) return;
+  hideSessionCtx();
+  deleteSessionById(_sessionCtxTarget.id);
+}
+
+function showToast(msg) {
+  let toast = document.getElementById('toast-msg');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast-msg';
+    toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--gold);color:var(--text);padding:8px 16px;border-radius:6px;font-size:11px;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+}
 
 // ── Context menu on background (empty area of file tree) ──
 function showFmCtxBg(e) {
@@ -2013,6 +2233,8 @@ const ENFORCEMENT_INFO = {
   'audit-trail': { label: 'Audit Trail', desc: 'Log all data operations to .audit/operations.jsonl' },
   'task-discipline': { label: 'Task Discipline', desc: 'Agent must create and track tasks via TodoWrite before doing any work' },
   'plan-discipline': { label: 'Plan Discipline', desc: 'Agent must write a plan file before starting implementation work' },
+  'job-discipline': { label: 'Job Discipline', desc: 'Agent must create a Job before working. Pipeline: Job → Plan → Tasks → Execute' },
+  'deploy-guard': { label: 'Deploy Guard', desc: 'Blocks manual file copies between servers — must use OTA deploy system' },
 };
 
 async function showSettingsModal() {
@@ -2229,6 +2451,17 @@ async function sendMessage() {
         children: folderFiles.map(f => ({ name: f.name, path: f.path, isDir: !!f.isDir, size: f.size })),
       }
     };
+  } else if (S._sessionRef) {
+    vc = {
+      sessionRef: {
+        id: S._sessionRef.id,
+        title: S._sessionRef.title,
+        model: S._sessionRef.model,
+        projectId: S._sessionRef.projectId,
+        projectName: S._sessionRef.projectName,
+      }
+    };
+    S._sessionRef = null; updateContextIndicator(); // consume after send
   } else if (S.viewer.file) {
     vc = {
       file: S.viewer.file, type: S.viewer.type, headers: S.viewer.headers, totalRows: S.viewer.totalRows,
@@ -2271,6 +2504,7 @@ async function sendMessage() {
           }
           if (data.type === 'todos') { S.todos = data.todos || []; renderTaskPane(); }
           if (data.type === 'plan') { S.plan = { content: data.content, path: data.path }; renderTaskPane(); }
+          if (data.type === 'job_update') { loadJobs().then(() => { renderJobsList(); renderTaskPane(); }); }
           if (data.type === 'file_changed') { refreshOpenFile(data.path); }
           if (data.type === 'tool_desc') {
             const pending = S.messages.findLast(m => m.toolId === data.id && m.pending);
@@ -2348,22 +2582,137 @@ function copyCode(btn) { navigator.clipboard.writeText(btn.nextElementSibling.te
 // ===========================================================================
 // Render: Sidebar
 // ===========================================================================
+// Sidebar view state: 'projects' (top-level) or 'sessions' (inside a project)
+let _sidebarView = 'projects';
+let _projectsCache = [];
+
 function renderSidebar() {
+  if (_sidebarView === 'projects') {
+    renderProjectList();
+  } else {
+    renderSessionList();
+  }
+  renderBreadcrumb();
+  updateNewButton();
+}
+
+function renderBreadcrumb() {
+  const bc = document.getElementById('sidebar-breadcrumb');
+  if (_sidebarView === 'projects') {
+    bc.style.display = 'none';
+    return;
+  }
+  bc.style.display = 'flex';
+  const proj = _projectsCache.find(p => p.id === S.activeProject);
+  const projName = proj ? esc(proj.name) : 'Project';
+  bc.innerHTML = `<a onclick="navigateToProjects()">Projects</a><span class="bc-sep">&#8250;</span><span class="bc-current">${projName}</span>`;
+}
+
+function updateNewButton() {
+  const btn = document.getElementById('btn-new');
+  btn.textContent = _sidebarView === 'projects' ? '+ Project' : '+ Session';
+}
+
+function sidebarNewAction() {
+  if (_sidebarView === 'projects') {
+    createNewProject();
+  } else {
+    newSession();
+  }
+}
+
+async function createNewProject() {
+  const name = prompt('Project name:');
+  if (!name) return;
+  const desc = prompt('Brief description (optional):') || '';
+  const { data } = await api('POST', '/api/projects', { name, description: desc });
+  if (data) {
+    _projectsCache.push(data);
+    renderSidebar();
+  }
+}
+
+function navigateToProjects() {
+  _sidebarView = 'projects';
+  S.activeProject = null;
+  renderSidebar();
+}
+
+function openProject(projectId) {
+  _sidebarView = 'sessions';
+  S.activeProject = projectId;
+  loadSessions();
+}
+
+async function renderProjectList() {
+  const el = document.getElementById('session-list');
+  el.innerHTML = '<div class="sidebar-empty">Loading projects...</div>';
+  try {
+    const { data, unassignedSessions } = await api('GET', '/api/projects');
+    _projectsCache = data || [];
+    let html = '';
+    // Show main session pinned at top if it exists
+    const mainSession = S.sessions.find(s => s.isMain);
+    if (mainSession) {
+      html += `<div class="session-item ${mainSession.id===S.activeId?'active':''}" onclick="openSession('${mainSession.id}')" style="border-left:2px solid var(--gold)">
+        <div class="session-title"><span style="color:var(--gold);font-size:9px;margin-right:3px">&#9733;</span>${esc(mainSession.title||'Main')}</div>
+        <div class="session-meta"><span class="model-badge ${mainSession.model||'opus'}">${mainSession.model||'opus'}</span><span>${mainSession.messageCount||0} msgs</span></div>
+      </div>`;
+    }
+    // Render projects
+    for (const p of _projectsCache) {
+      html += `<div class="project-item" onclick="openProject('${esc(p.id)}')">
+        <div class="project-name"><span class="project-icon">&#128194;</span>${esc(p.name)}</div>
+        <div class="project-meta">
+          <span class="project-count">${p.sessionCount||0} sessions</span>
+          <span class="project-count">${p.jobCount||0} jobs</span>
+          <span>${relTime(p.createdAt)}</span>
+        </div>
+      </div>`;
+    }
+    // Unassigned sessions
+    if (unassignedSessions > 0) {
+      html += `<div class="project-item" onclick="openProject('__unassigned')" style="opacity:0.7">
+        <div class="project-name"><span class="project-icon">&#128196;</span>Unassigned Sessions</div>
+        <div class="project-meta"><span class="project-count">${unassignedSessions} sessions</span></div>
+      </div>`;
+    }
+    if (!_projectsCache.length && !unassignedSessions) {
+      // If we have local sessions, show them directly instead of empty message
+      if (S.sessions && S.sessions.length > 0) {
+        _sidebarView = 'sessions';
+        S.activeProject = null;
+        renderSessionList();
+        return;
+      }
+      html = '<div class="sidebar-empty">No projects yet<br><span style="font-size:10px;color:var(--text-muted)">Click + Project to create one</span></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    // Projects API not available — fall back to showing all sessions directly
+    _projectsCache = [];
+    _sidebarView = 'sessions';
+    S.activeProject = null;
+    renderSessionList();
+    return;
+  }
+}
+
+function renderSessionList() {
   const el = document.getElementById('session-list');
   let filtered = S.sessions;
-  if (S.activeProject) filtered = filtered.filter(s => s.projectId === S.activeProject);
+  if (S.activeProject === '__unassigned') {
+    filtered = filtered.filter(s => !s.projectId);
+  } else if (S.activeProject) {
+    filtered = filtered.filter(s => s.projectId === S.activeProject);
+  }
   if (!filtered.length) {
-    el.innerHTML = S.activeProject
-      ? '<div class="sidebar-empty">No sessions in this project<br><a class="sidebar-link" onclick="S.activeProject=null;loadSessions()" style="justify-content:center;margin-top:8px">&larr; All sessions</a></div>'
-      : '<div class="sidebar-empty">No sessions yet</div>';
+    el.innerHTML = '<div class="sidebar-empty">No sessions in this project<br><span style="font-size:10px;color:var(--text-muted)">Click + Session to start one</span></div>';
     return;
   }
   let html = '';
-  if (S.activeProject) {
-    html += `<div style="padding:6px 12px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border);cursor:pointer" onclick="S.activeProject=null;loadSessions()">&larr; All sessions</div>`;
-  }
   html += filtered.map(s => `
-    <div class="session-item ${s.id===S.activeId?'active':''}" onclick="openSession('${s.id}')">
+    <div class="session-item ${s.id===S.activeId?'active':''}" onclick="openSession('${s.id}')" oncontextmenu="showSessionCtx(event,'${s.id}')">
       <div class="session-title">${s.isMain ? '<span style="color:var(--gold);font-size:9px;margin-right:3px">&#9733;</span>' : ''}${esc(s.title||'New Analysis')}</div>
       <div class="session-meta">
         <span class="model-badge ${s.model||'opus'}">${s.model||'opus'}</span>
@@ -2617,6 +2966,17 @@ function renderMsg(msg) {
     const dimStyle = msg.compacted ? 'opacity:0.5;' : '';
     if (msg.contextOverflow) return `<div class="msg"><div class="msg-header"><span class="msg-sender system">system</span></div><div class="msg-body" style="color:var(--gold)"><strong>Context window full</strong> — use <code>/compact</code> to summarize and continue.<br><button onclick="compactSession()" style="margin-top:8px;padding:6px 16px;background:var(--gold);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:600">Compact Session</button></div></div>`;
     return `<div class="msg" style="${dimStyle}"><div class="msg-header"><span class="msg-sender system">system</span></div><div class="msg-body" style="color:var(--text-dim)">${esc(msg.content)}</div></div>`;
+  }
+
+  // --- Injected cross-session messages ---
+  if (msg.injected && msg.role === 'user') {
+    const senderName = msg.senderAgent || 'Remote Agent';
+    const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
+    const isReply = msg.isReply;
+    const badge = isReply ? 'reply' : 'cross-session';
+    const badgeColor = isReply ? 'rgba(74,222,128,0.15)' : 'rgba(96,165,250,0.15)';
+    const badgeText = isReply ? '#4ade80' : '#60a5fa';
+    return `<div class="msg"><div class="msg-header"><span class="msg-sender injected">${esc(senderName)}</span><span class="msg-badge-inject" style="background:${badgeColor};color:${badgeText}">${badge}</span><span class="msg-time">${time}</span></div><div class="msg-body md inject-body">${md(msg.content)}</div></div>`;
   }
 
   // --- User / Assistant messages ---
@@ -3078,6 +3438,14 @@ function updateContextIndicator() {
     if (!hint) hint = 'Claude sees this task as context';
   }
 
+  // Session reference pill
+  if (S._sessionRef) {
+    const rLabel = S._sessionRef.title.length > 40 ? S._sessionRef.title.slice(0, 37) + '...' : S._sessionRef.title;
+    const projLabel = S._sessionRef.projectName ? ` / ${S._sessionRef.projectName}` : '';
+    pills += `<span class="context-pill">&#128279; ${esc(rLabel)} <span style="opacity:0.5;font-size:9px">(session${projLabel})</span><button onclick="clearSessionRef()" title="Clear reference">&#x2715;</button></span>`;
+    if (!hint) hint = 'Claude sees this session reference';
+  }
+
   // File viewer pill
   if (v.file) {
     let label = v.file.split('/').pop();
@@ -3226,39 +3594,7 @@ function renderScriptsView(el, scripts) {
   el.innerHTML = html;
 }
 
-// ===========================================================================
-// Render: Projects panel
-// ===========================================================================
-function renderProjectsView(el, projects) {
-  let html = '<div class="md-viewer md"><h2>Research Projects</h2><p style="color:var(--text-dim);font-size:12px">Organize sessions into focused research projects. Each project groups related sessions for deep-dive analysis.</p><hr>';
-  if (!projects.length) {
-    html += '<p style="color:var(--text-muted)">No projects yet. Ask Claude to create one, or use the "New Project" button below.</p>';
-  }
-  for (const p of projects) {
-    const count = (p.sessions || []).length;
-    html += `<div style="margin:10px 0;padding:10px 12px;background:var(--surface);border-radius:var(--radius);cursor:pointer;border-left:3px solid var(--gold-dim)" onclick="openProject('${esc(p.id)}')">
-      <strong style="font-size:13px">${esc(p.name)}</strong>
-      <span style="font-size:10px;color:var(--text-muted);margin-left:8px">${count} session${count!==1?'s':''}</span>
-      ${p.description ? `<p style="font-size:11px;color:var(--text-dim);margin:4px 0">${esc(p.description)}</p>` : ''}
-    </div>`;
-  }
-  html += `<button class="btn-new" style="margin-top:12px" onclick="createProject()">+ New Project</button></div>`;
-  el.innerHTML = html;
-}
-
-async function openProject(projectId) {
-  // Filter sessions by project and show them
-  S.activeProject = projectId;
-  await loadSessions();
-}
-
-async function createProject() {
-  const name = prompt('Project name:');
-  if (!name) return;
-  const desc = prompt('Description (optional):') || '';
-  await api('POST', '/api/projects', { name, description: desc });
-  showProjectsPanel();
-}
+// Projects panel moved to top-level sidebar navigation (renderProjectList / renderSessionList)
 
 // ===========================================================================
 // Sidebar toggle
@@ -3287,10 +3623,8 @@ function switchSbTab(tab) {
 async function renderSbPanel() {
   const el = document.getElementById('sb-panel');
   if (_sbActiveTab === 'platforms') await renderSbPlatforms(el);
-  else if (_sbActiveTab === 'projects') await renderSbProjects(el);
   else if (_sbActiveTab === 'settings') await renderSbSettings(el);
   else if (_sbActiveTab === 'scripts') await renderSbScripts(el);
-  else if (_sbActiveTab === 'channels') await renderSbChannels(el);
 }
 
 // --- Platforms panel (auto-hides if server doesn't support /api/platforms) ---
@@ -3340,22 +3674,7 @@ async function renderSbPlatforms(el) {
   el.innerHTML = html;
 }
 
-// --- Projects panel ---
-async function renderSbProjects(el) {
-  el.innerHTML = '<div style="color:var(--text-muted);padding:10px">Loading...</div>';
-  const { data } = await api('GET', '/api/projects');
-  const projects = data || [];
-  if (!projects.length) { el.innerHTML = '<div style="color:var(--text-muted);padding:16px;text-align:center">No projects yet</div>'; return; }
-  let html = '';
-  for (const p of projects) {
-    const active = S.activeProject === p.id;
-    html += `<div class="pt-node${active ? ' active' : ''}" onclick="openProject('${esc(p.id)}')">
-      <span class="pt-icon">&#128194;</span><span class="pt-label">${esc(p.name)}</span>
-      <span class="pt-port">${p.sessionCount || 0}</span></div>`;
-  }
-  if (S.activeProject) html += '<div class="pt-add" onclick="S.activeProject=null;loadSessions();renderSbPanel()">Show all sessions</div>';
-  el.innerHTML = html;
-}
+// Projects panel removed — projects are now top-level sidebar navigation
 
 // --- Settings panel (enforcements + skills + docs) ---
 async function renderSbSettings(el) {
@@ -3626,7 +3945,7 @@ function selectFolder(dirPath, dirName) {
 // Legacy wrappers — keep these so existing code doesn't break
 function renderSidebarFooter() {} // no longer needed
 async function showScriptsPanel() { switchSbTab('scripts'); }
-async function showProjectsPanel() { switchSbTab('projects'); }
+async function showProjectsPanel() { navigateToProjects(); }
 
 // ===========================================================================
 // File watcher — poll fingerprint every 10s, refresh only on change
@@ -3701,7 +4020,7 @@ function renderTaskPane() {
   }
 
   if (!todos.length) {
-    list.innerHTML = '<div class="task-empty">No active tasks.<br><span style="font-size:10px;opacity:0.7">When the agent creates a task list, it will appear here.</span></div>';
+    list.innerHTML = '<div class="task-empty">No active tasks.<br><span style="font-size:10px;opacity:0.7">When the agent creates tasks, they will appear here.</span></div>';
     count.textContent = '';
     progress.style.display = 'none';
     return;
@@ -3790,20 +4109,131 @@ function togglePlanExpand() {
   btn.innerHTML = body.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
 }
 
-async function loadTodos() {
-  if (!S.activeId) { S.todos = []; S.plan = null; renderTaskPane(); return; }
+// ---------------------------------------------------------------------------
+// Jobs management in task pane
+// ---------------------------------------------------------------------------
+let _sessionJobs = [];
+let _activeJobId = null;
+
+async function loadJobs() {
+  if (!S.activeId) { _sessionJobs = []; _activeJobId = null; return; }
   try {
-    const { data } = await api('GET', `/api/sessions/${S.activeId}/todos`);
-    S.todos = data || [];
-  } catch { S.todos = []; }
-  // Load plan for this session
+    const { data } = await api('GET', `/api/sessions/${S.activeId}/jobs`);
+    _sessionJobs = data || [];
+    // Auto-select the active job
+    const active = _sessionJobs.find(j => j.status === 'active');
+    _activeJobId = active ? active.id : null;
+  } catch { _sessionJobs = []; _activeJobId = null; }
+}
+
+function renderJobsList() {
+  const section = document.getElementById('jobs-section');
+  const list = document.getElementById('jobs-list');
+  const session = S.sessions.find(s => s.id === S.activeId);
+
+  // Only show jobs section if session belongs to a project
+  if (!session || !session.projectId) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+
+  if (!_sessionJobs.length) {
+    list.innerHTML = '<div style="padding:8px 10px;font-size:10px;color:var(--text-muted);text-align:center">No jobs yet. Click + Job to create one.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const j of _sessionJobs) {
+    const icon = j.status === 'completed' ? '&#9989;' : j.status === 'paused' ? '&#9208;' : '&#9654;';
+    const active = j.id === _activeJobId ? ' active' : '';
+    html += `<div class="job-item${active}" onclick="selectJob('${j.id}')">
+      <span class="job-status">${icon}</span>
+      <span class="job-title">${esc(j.title)}</span>
+      <span class="job-badge">${j.status}</span>
+    </div>`;
+  }
+  list.innerHTML = html;
+}
+
+async function selectJob(jobId) {
+  _activeJobId = jobId;
+  const session = S.sessions.find(s => s.id === S.activeId);
+  if (!session || !session.projectId) return;
+
+  // Load job-specific plan and tasks
   try {
-    const { data } = await api('GET', `/api/sessions/${S.activeId}/plan`);
+    const { data } = await api('GET', `/api/projects/${session.projectId}/jobs/${jobId}/plan`);
     S.plan = data || null;
   } catch { S.plan = null; }
+  try {
+    const { data } = await api('GET', `/api/projects/${session.projectId}/jobs/${jobId}/tasks`);
+    S.todos = (data && data.tasks) ? data.tasks : [];
+  } catch { S.todos = []; }
+
+  renderJobsList();
   renderTaskPane();
-  // Auto-expand task pane when there are tasks or a plan
-  if ((S.todos.length || S.plan) && document.getElementById('task-pane').classList.contains('collapsed')) {
+}
+
+async function createJobFromUI() {
+  const title = prompt('Job title:');
+  if (!title) return;
+  try {
+    const { data } = await api('POST', `/api/sessions/${S.activeId}/jobs`, { title });
+    if (data) {
+      _sessionJobs.push(data);
+      _activeJobId = data.id;
+      renderJobsList();
+      renderTaskPane();
+    }
+  } catch (e) {
+    alert('Error creating job: ' + e.message);
+  }
+}
+
+async function completeJob(jobId) {
+  const session = S.sessions.find(s => s.id === S.activeId);
+  if (!session || !session.projectId) return;
+  await api('PUT', `/api/projects/${session.projectId}/jobs/${jobId}`, { status: 'completed' });
+  await loadJobs();
+  renderJobsList();
+  renderTaskPane();
+}
+
+async function loadTodos() {
+  if (!S.activeId) { S.todos = []; S.plan = null; renderTaskPane(); return; }
+
+  // Load jobs for this session
+  await loadJobs();
+
+  // If session has an active job, load job-specific plan/tasks
+  const session = S.sessions.find(s => s.id === S.activeId);
+  if (session && session.projectId && _activeJobId) {
+    try {
+      const { data } = await api('GET', `/api/projects/${session.projectId}/jobs/${_activeJobId}/plan`);
+      S.plan = data || null;
+    } catch { S.plan = null; }
+    try {
+      const { data } = await api('GET', `/api/projects/${session.projectId}/jobs/${_activeJobId}/tasks`);
+      S.todos = (data && data.tasks) ? data.tasks : [];
+    } catch { S.todos = []; }
+  } else {
+    // Fallback to session-level plan/tasks (backwards compatible)
+    try {
+      const { data } = await api('GET', `/api/sessions/${S.activeId}/todos`);
+      S.todos = data || [];
+    } catch { S.todos = []; }
+    try {
+      const { data } = await api('GET', `/api/sessions/${S.activeId}/plan`);
+      S.plan = data || null;
+    } catch { S.plan = null; }
+  }
+
+  renderJobsList();
+  renderTaskPane();
+
+  // Auto-expand task pane when there are tasks, a plan, or jobs
+  if ((S.todos.length || S.plan || _sessionJobs.length) && document.getElementById('task-pane').classList.contains('collapsed')) {
     document.getElementById('task-pane').classList.remove('collapsed');
     const btn = document.getElementById('btn-tasks-toggle');
     if (btn) btn.classList.add('active');
@@ -4364,54 +4794,6 @@ let _jointLastSeq = 0;
 let _jointSSE = null;
 let _jointAgentInfo = null;
 
-async function renderSbChannels(el) {
-  el.innerHTML = '<div style="color:var(--text-muted);padding:10px">Loading channels...</div>';
-  try {
-    const { data } = await api('GET', '/api/joint/channels');
-    _jointChannels = data || [];
-    // Also fetch our identity
-    if (!_jointAgentInfo) {
-      try { const r = await api('GET', '/api/joint/whoami'); _jointAgentInfo = r.data; } catch {}
-    }
-  } catch { _jointChannels = []; }
-
-  if (_jointChannels.length === 0) {
-    el.innerHTML = `
-      <div style="color:var(--text-muted);padding:10px;font-size:11px">No channels yet.</div>
-      <div class="sb-channel-create">
-        <input id="sb-new-channel" placeholder="#channel-name" onkeydown="if(event.key==='Enter')sbCreateChannel()">
-        <button onclick="sbCreateChannel()">Create</button>
-      </div>`;
-    return;
-  }
-
-  let html = '<ul class="sb-channels">';
-  for (const ch of _jointChannels) {
-    const active = _jointActiveChannel && _jointActiveChannel.id === ch.id ? ' active' : '';
-    html += `<li class="sb-channel-item${active}" onclick="openJointChannel('${ch.name}')">
-      <span class="sb-channel-name">#${ch.name}</span>
-      <span class="sb-channel-meta">${ch.member_count || 0} members</span>
-    </li>`;
-  }
-  html += '</ul>';
-  html += `<div class="sb-channel-create">
-    <input id="sb-new-channel" placeholder="#channel-name" onkeydown="if(event.key==='Enter')sbCreateChannel()">
-    <button onclick="sbCreateChannel()">Create</button>
-  </div>`;
-  el.innerHTML = html;
-}
-
-async function sbCreateChannel() {
-  const input = document.getElementById('sb-new-channel');
-  const name = (input.value || '').trim();
-  if (!name) return;
-  try {
-    await api('POST', '/api/joint/channels', { name, topic: '' });
-    input.value = '';
-    renderSbPanel();
-  } catch (e) { console.error('Failed to create channel:', e); }
-}
-
 async function openJointChannel(channelName) {
   // Fetch channel info
   try {
@@ -4434,26 +4816,32 @@ async function openJointChannel(channelName) {
     _jointLastSeq = _jointMessages.length > 0 ? _jointMessages[_jointMessages.length - 1].seq : 0;
   } catch { _jointMessages = []; _jointLastSeq = 0; }
 
-  // Show the panel
-  const panel = document.getElementById('joint-panel');
-  const gutter = document.getElementById('joint-gutter');
-  panel.classList.add('open');
-  gutter.style.display = '';
+  // Show channel chat view, hide channel list
+  document.getElementById('cp-channel-list-view').style.display = 'none';
+  const chatView = document.getElementById('cp-channel-chat-view');
+  chatView.style.display = 'flex';
   document.getElementById('joint-channel-name').textContent = '#' + _jointActiveChannel.name;
   document.getElementById('joint-topic').textContent = _jointActiveChannel.topic || '';
   document.getElementById('joint-members-badge').textContent = (_jointActiveChannel.members || []).length + ' members';
 
+  // Make sure we're on the channels tab
+  switchChannelTab('channels');
+
   renderJointMessages();
   connectJointSSE();
-  renderSbPanel(); // update sidebar active state
+  renderChannelList(); // update list active state
+}
+
+function backToChannelList() {
+  document.getElementById('cp-channel-chat-view').style.display = 'none';
+  document.getElementById('cp-channel-list-view').style.display = '';
+  disconnectJointSSE();
+  _jointActiveChannel = null;
+  renderChannelList();
 }
 
 function closeJointPanel() {
-  document.getElementById('joint-panel').classList.remove('open');
-  document.getElementById('joint-gutter').style.display = 'none';
-  disconnectJointSSE();
-  _jointActiveChannel = null;
-  renderSbPanel();
+  backToChannelList();
 }
 
 function renderJointMessages() {
@@ -4597,14 +4985,191 @@ function highlightMentions(text) {
   return text.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 }
 
-// Joint gutter resize
-(function initJointGutter() {
-  const gutter = document.getElementById('joint-gutter');
+
+// ---------------------------------------------------------------------------
+// Channel Panel — tab switching, channel list, inbox
+// ---------------------------------------------------------------------------
+let _channelPanelTab = 'channels';
+let _inboxMessages = [];
+let _inboxAgents = [];
+let _inboxPollTimer = null;
+
+function switchChannelTab(tab) {
+  _channelPanelTab = tab;
+  document.querySelectorAll('.cp-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  const chView = document.getElementById('cp-channels-view');
+  const inView = document.getElementById('cp-inbox-view');
+  if (chView) { chView.style.display = tab === 'channels' ? 'flex' : 'none'; chView.classList.toggle('active', tab === 'channels'); }
+  if (inView) { inView.style.display = tab === 'inbox' ? 'flex' : 'none'; inView.classList.toggle('active', tab === 'inbox'); }
+  if (tab === 'inbox') { refreshInbox(); refreshInboxAgents(); }
+  if (tab === 'channels') { renderChannelList(); }
+}
+
+async function renderChannelList() {
+  const container = document.getElementById('cp-channel-items');
+  if (!container) return;
+  try {
+    const { data } = await api('GET', '/api/joint/channels');
+    _jointChannels = data || [];
+    if (!_jointAgentInfo) {
+      try { const r = await api('GET', '/api/joint/whoami'); _jointAgentInfo = r.data; } catch {}
+    }
+  } catch { _jointChannels = []; }
+
+  if (!_jointChannels.length) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">No channels yet. Create one above.</div>';
+    return;
+  }
+  container.innerHTML = _jointChannels.map(ch => {
+    const active = _jointActiveChannel && _jointActiveChannel.id === ch.id ? ' active' : '';
+    return `<div class="cp-channel-item${active}" onclick="openJointChannel('${esc(ch.name)}')">
+      <span class="cp-channel-hash">#</span>
+      <span>${esc(ch.name)}</span>
+      <span style="font-size:10px;color:var(--text-muted);margin-left:auto">${ch.member_count || 0}</span>
+    </div>`;
+  }).join('');
+}
+
+async function cpCreateChannel() {
+  const input = document.getElementById('cp-new-channel');
+  const name = (input.value || '').trim();
+  if (!name) return;
+  try {
+    await api('POST', '/api/joint/channels', { name, topic: '' });
+    input.value = '';
+    renderChannelList();
+  } catch (e) { console.error('Failed to create channel:', e); }
+}
+
+// --- Inbox functions (updated for channel panel) ---
+
+async function refreshInbox() {
+  try {
+    const { data } = await api('GET', '/api/agent/inbox?all=1');
+    _inboxMessages = data || [];
+    renderInboxMessages();
+    updateInboxBadge();
+  } catch (e) { console.error('Inbox refresh error:', e); }
+}
+
+async function refreshInboxAgents() {
+  try {
+    const { data } = await api('GET', '/api/joint/agents');
+    _inboxAgents = (data || []).filter(a => a.port !== (S.lab?.port || parseInt(location.port)));
+    renderInboxAgents();
+  } catch (e) { console.error('Agent discovery error:', e); }
+}
+
+function renderInboxMessages() {
+  const container = document.getElementById('inbox-messages');
+  if (!container) return;
+  if (!_inboxMessages.length) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:12px 0;text-align:center">No messages yet</div>';
+    return;
+  }
+  container.innerHTML = _inboxMessages.slice().reverse().map(msg => {
+    const from = msg.sender?.name || 'Unknown';
+    const server = msg.sender?.server || '';
+    const port = msg.sender?.port || '';
+    const time = msg.receivedAt ? new Date(msg.receivedAt).toLocaleTimeString() : '';
+    const urgentClass = msg.priority === 'urgent' ? ' urgent' : '';
+    const isReply = msg.isReply ? ' (reply)' : '';
+    const deliveredDim = msg.delivered ? ' style="opacity:0.6"' : '';
+    return `<div class="inbox-msg${urgentClass}"${deliveredDim}>
+      <span class="inbox-msg-from">${esc(from)}${isReply}</span>
+      <span class="inbox-msg-meta">${esc(server)}:${port} &middot; ${time}${msg.delivered ? ' &middot; delivered' : ''}</span>
+      <div class="inbox-msg-body">${esc(msg.message || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderInboxAgents() {
+  const list = document.getElementById('inbox-agent-list');
+  const select = document.getElementById('inbox-target-agent');
+  if (!list || !select) return;
+  if (!_inboxAgents.length) {
+    list.innerHTML = '<span style="font-size:10px;color:var(--text-muted)">No other agents found</span>';
+    select.innerHTML = '<option value="">No agents available</option>';
+    return;
+  }
+  list.innerHTML = _inboxAgents.map(a => {
+    const online = a.status === 'running';
+    return `<span class="inbox-agent-chip" onclick="inboxSelectAgent(${a.port})" title="${a.instance || ''} on ${a.server_id || ''}:${a.port}">
+      <span class="agent-dot ${online ? 'online' : 'offline'}"></span>
+      ${esc(a.display_name || a.instance || 'Agent')}
+    </span>`;
+  }).join('');
+  select.innerHTML = '<option value="">Select agent...</option>' + _inboxAgents.map(a =>
+    `<option value="${a.port}">${esc(a.display_name || a.instance || 'Agent')} (${a.server_id || ''}:${a.port})</option>`
+  ).join('');
+}
+
+function inboxSelectAgent(port) {
+  document.getElementById('inbox-target-agent').value = port;
+  document.getElementById('inbox-compose-box').focus();
+}
+
+async function inboxSendMessage() {
+  const targetPort = document.getElementById('inbox-target-agent').value;
+  const box = document.getElementById('inbox-compose-box');
+  const message = box.value.trim();
+  if (!targetPort || !message) return;
+  try {
+    const { data, error } = await api('POST', '/api/agent/send', {
+      targetPort: parseInt(targetPort),
+      message,
+      fromSessionId: S.activeId,
+      triggerAgent: true,
+    });
+    if (error) { console.error('Send error:', error); return; }
+    box.value = '';
+    _inboxMessages.push({
+      message: `[SENT to port ${targetPort}] ${message}`,
+      sender: { name: 'You', server: '', port: '' },
+      receivedAt: new Date().toISOString(),
+      delivered: true, priority: 'normal',
+    });
+    renderInboxMessages();
+  } catch (e) { console.error('Send failed:', e); }
+}
+
+function updateInboxBadge() {
+  const undelivered = _inboxMessages.filter(m => !m.delivered).length;
+  // Update header badge
+  const badge = document.getElementById('inbox-badge');
+  if (badge) { badge.textContent = undelivered; badge.style.display = undelivered > 0 ? 'flex' : 'none'; }
+  // Update tab badge
+  const tabBadge = document.getElementById('inbox-badge-tab');
+  if (tabBadge) { tabBadge.textContent = undelivered; tabBadge.style.display = undelivered > 0 ? 'inline' : 'none'; }
+}
+
+function escapeHtml(s) { return esc(s); }
+
+// Poll inbox every 15 seconds
+function startInboxPolling() {
+  if (_inboxPollTimer) clearInterval(_inboxPollTimer);
+  _inboxPollTimer = setInterval(async () => {
+    try {
+      const { data } = await api('GET', '/api/agent/inbox');
+      if ((data || []).length > 0) {
+        for (const msg of data) {
+          if (!_inboxMessages.find(m => m.id === msg.id)) _inboxMessages.push(msg);
+        }
+        updateInboxBadge();
+        if (_channelPanelTab === 'inbox') renderInboxMessages();
+      }
+    } catch {}
+  }, 15000);
+}
+
+// Channel gutter resize
+(function initChannelGutter() {
+  const gutter = document.getElementById('channel-gutter');
   if (!gutter) return;
   let startX, startWidth;
   gutter.addEventListener('mousedown', (e) => {
     e.preventDefault();
-    const panel = document.getElementById('joint-panel');
+    const panel = document.getElementById('channel-panel');
     startX = e.clientX;
     startWidth = panel.offsetWidth;
     const onMove = (e2) => {
@@ -4616,6 +5181,9 @@ function highlightMentions(text) {
     document.addEventListener('mouseup', onUp);
   });
 })();
+
+// Start inbox polling and load channel list after page loads
+setTimeout(() => { startInboxPolling(); refreshInbox(); renderChannelList(); }, 3000);
 
 
 </script>

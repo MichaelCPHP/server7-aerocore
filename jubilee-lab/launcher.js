@@ -10,17 +10,11 @@ const { randomUUID } = require('node:crypto');
 
 const PLATFORM_DIR = __dirname;
 const INSTANCES_DIR = path.join(PLATFORM_DIR, 'instances');
-const SERVER_ROOT = process.env.SERVER_ROOT || path.resolve(PLATFORM_DIR, '..');
-const GENESIS_DIR = process.env.GENESIS_DIR || path.join(SERVER_ROOT, 'genesis');
+const GENESIS_DIR = process.env.GENESIS_DIR || path.resolve(PLATFORM_DIR, '..', 'genesis');
 const CORE_SERVER = path.join(GENESIS_DIR, 'template', 'core', 'server.js');
 const GLOBAL_PLUGINS_DIR = path.join(GENESIS_DIR, 'template', 'plugins');
 const GLOBAL_SKILLS_DIR = path.join(GENESIS_DIR, 'template', 'skills');
-
-// Read server.json for port base (defaults to 3000 for backward compatibility)
-let SERVER_CONFIG = {};
-try { SERVER_CONFIG = JSON.parse(fs.readFileSync(path.join(SERVER_ROOT, 'server.json'), 'utf8')); } catch (e) {}
-const PORT_BASE = SERVER_CONFIG.portBase || 3000;
-const PORT = parseInt(process.env.LAUNCHER_PORT || (PORT_BASE + 200), 10);
+const PORT = 3200;
 
 // Ensure instances directory exists
 try { fs.mkdirSync(INSTANCES_DIR, { recursive: true }); } catch (e) {}
@@ -67,7 +61,7 @@ function startInstance(id) {
 
   const proc = spawn('node', [CORE_SERVER], {
     cwd: dir,
-    env: { ...process.env, LAB_INSTANCE: dir, LAB_PORT: String(port), LAB_IS_GENESIS: '0', SERVER_ROOT, GENESIS_DIR, GLOBAL_PLUGINS_DIR, GLOBAL_SKILLS_DIR },
+    env: { ...process.env, LAB_INSTANCE: dir, LAB_PORT: String(port), LAB_IS_GENESIS: '0', GENESIS_DIR, GLOBAL_PLUGINS_DIR, GLOBAL_SKILLS_DIR },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   proc.stdout.on('data', d => process.stdout.write(`[${id}] ${d}`));
@@ -108,9 +102,9 @@ function createInstance(name, description, icon, color) {
   const dir = path.join(INSTANCES_DIR, id);
   if (fs.existsSync(dir)) return { error: 'Instance already exists' };
 
-  // Find next available port (offset from server port base)
+  // Find next available port
   const usedPorts = getInstances().map(i => i.port);
-  let port = PORT_BASE + 211;
+  let port = 3211;
   while (usedPorts.includes(port)) port++;
 
   fs.mkdirSync(path.join(dir, 'data'), { recursive: true });

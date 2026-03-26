@@ -7,7 +7,8 @@
     "content": "Content creation and publishing skills",
     "analysis": "Analysis script runner",
     "utility": "Utility skills — uploads, logs, help",
-    "agent": "Agent identity, memory, and self-awareness skills"
+    "agent": "Agent identity, memory, and self-awareness skills",
+    "communication": "Cross-agent messaging and collaboration"
   },
   "skills": [
     {
@@ -312,6 +313,30 @@
       "usage": "/taxonomy",
       "script": "draft_manager.py",
       "args": ["taxonomy"]
+    },
+    {
+      "command": "send",
+      "name": "Send Message",
+      "category": "communication",
+      "description": "Send a message to another agent. Uses /api/agent/send — handles identity and session discovery automatically.",
+      "usage": "/send <agent-name-or-port> <message>",
+      "builtIn": true
+    },
+    {
+      "command": "inbox",
+      "name": "Check Inbox",
+      "category": "communication",
+      "description": "Show undelivered and recent inbox messages from other agents",
+      "usage": "/inbox [--all]",
+      "builtIn": true
+    },
+    {
+      "command": "agents",
+      "name": "List Agents",
+      "category": "communication",
+      "description": "Show all discovered agents across servers with their status",
+      "usage": "/agents",
+      "builtIn": true
     }
   ]
 }

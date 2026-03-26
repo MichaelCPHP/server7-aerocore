@@ -1,0 +1,56 @@
+{
+  "description": "MCP servers installed on SERVER7-AEROCORE. Each entry defines a locally-installed MCP server that instances can reference.",
+  "servers": {
+    "google-ads-mcp": {
+      "name": "Google Ads MCP",
+      "description": "Full read/write access to Google Ads API — 89 services including campaigns, ad groups, keywords, bidding, reporting via GAQL",
+      "source": "https://github.com/promobase/google-ads-mcp",
+      "path": "google-ads-mcp",
+      "runtime": "python",
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "envRequired": [
+        "GOOGLE_ADS_DEVELOPER_TOKEN",
+        "GOOGLE_ADS_CLIENT_ID",
+        "GOOGLE_ADS_CLIENT_SECRET",
+        "GOOGLE_ADS_REFRESH_TOKEN",
+        "GOOGLE_ADS_CUSTOMER_ID"
+      ],
+      "envOptional": [
+        "GOOGLE_ADS_LOGIN_CUSTOMER_ID"
+      ],
+      "status": "installed",
+      "installed": "2026-03-22"
+    },
+    "meta-ads-mcp": {
+      "name": "Meta Ads MCP",
+      "description": "Facebook + Instagram ad management — 30+ tools for campaigns, audiences, creatives, analytics, and optimization",
+      "source": "https://github.com/pipeboard-co/meta-ads-mcp",
+      "path": "meta-ads-mcp",
+      "runtime": "python",
+      "command": "meta-ads-mcp/.venv/bin/python",
+      "args": ["-m", "meta_ads_mcp"],
+      "envRequired": [
+        "META_ACCESS_TOKEN"
+      ],
+      "envOptional": [
+        "META_APP_SECRET",
+        "META_AD_ACCOUNT_ID"
+      ],
+      "status": "installed",
+      "installed": "2026-03-22"
+    },
+    "ads-unified-mcp": {
+      "name": "Adspirer Unified Ads MCP",
+      "description": "Cloud-hosted multi-platform MCP — Google Ads, Meta Ads, TikTok, LinkedIn. 91 tools via remote streamable HTTP",
+      "source": "https://github.com/amekala/ads-mcp",
+      "path": "ads-unified-mcp",
+      "runtime": "remote",
+      "remoteUrl": "https://mcp.adspirer.com/mcp",
+      "authType": "oauth2",
+      "note": "Cloud-hosted service — requires OAuth2 authentication with Adspirer. No local credentials needed beyond OAuth flow.",
+      "status": "installed",
+      "installed": "2026-03-22"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "b23cc7e1-e2a6-4627-bf20-1ed2417bff21",
+    "claudeSessionId": "cd0ddd8b-3d7d-42ca-8e4f-d83e448109a3",
+    "title": "Lab — Main",
+    "model": "opus",
+    "createdAt": "2026-03-23T18:53:02.682Z",
+    "lastMessageAt": "2026-03-23T18:53:15.932Z",
+    "messageCount": 1,
+    "totalCost": 0,
+    "agentName": "Lab",
+    "isMain": true
+  }
+]
